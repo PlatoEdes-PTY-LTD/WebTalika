@@ -29,7 +29,7 @@
 - **Pinned actions column.** Edit and Delete stay visible at the right edge while the table scrolls horizontally.
 - **More-columns dots.** The header of the actions column shows a three-dots button when more columns are hidden to the right. Click it to scroll right. It disappears at the end of the table.
 - **Multiple independent instances.** Each browser tab has its own data. The **New Window** button opens a fresh, separate copy.
-- **Download App.** The **Download App** link in the header of the [home page](https://platoedes-pty-ltd.github.io/Talika/index.html) downloads the app as `talika.html`, so you can keep it on your disk and run it offline. Your data is not in that file; use Export for your data.
+- **Download App.** The **Download App** link in the header of the [home page](https://platoedes-pty-ltd.github.io/Talika/index.html) downloads the app as `webtalika.html`, so you can keep it on your disk and run it offline. Your data is not in that file; use Export for your data.
 - **Phones, iPad and other touch screens.** Everything works with a finger:
   - Tap a column's ▾ button to open its menu (Filter, Change type, Rename, Remove); tap it again to close it.
   - Long-press a tab for its menu (Rename, Duplicate, Move left, Move right, Delete).
@@ -41,7 +41,7 @@
 
 ## Getting started
 
-1. Download `talika.html`.
+1. Download `webtalika.html`.
 2. Open it in Chrome, Edge, Firefox, or Safari.
 3. Click **Import Excel** (up-arrow icon) to build a table from a spreadsheet, or **Add Column** to start from scratch.
 4. Click **Add Entry** (plus icon) to add rows.
