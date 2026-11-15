@@ -25,7 +25,7 @@
 
 ## 2. Product summary
 
-Talika (tagline: *The List*) is a dynamic tabular document creator. It was called DynaDoc before step 26. The app file is now `webtalika.html`. The storage keys and the GitHub Pages URL keep the old name on purpose. It helps a user keep an Excel file up to date.
+Talika (tagline: *The List*) is a dynamic tabular document creator. It was called DynaDoc before step 26. The app file is now `webtalika.html`. The storage keys keep the old name on purpose. The GitHub Pages URL is `https://platoedes-pty-ltd.github.io/WebTalika/`. It helps a user keep an Excel file up to date.
 
 - The user imports an Excel file or adds columns by hand.
 - The user edits the data in a table.

@@ -6,7 +6,7 @@
 
 **WebTalika**, also known as **Talika**, is a free, open-source web app for editing spreadsheets in the browser. It is a dynamic tabular document creator for easy maintenance of Excel files. Import a spreadsheet or define your own columns, edit the data in a clean table, and export it back to Excel. There is no fixed schema, so you can track anything: use cases, contacts, inventory, tasks. Everything runs in the browser from a single file, with no server, no account, and no build step.
 
-[Open WebTalika](https://platoedes-pty-ltd.github.io/Talika/index.html)
+[Open WebTalika](https://platoedes-pty-ltd.github.io/WebTalika/index.html)
 
 ## Features
 
@@ -29,7 +29,7 @@
 - **Pinned actions column.** Edit and Delete stay visible at the right edge while the table scrolls horizontally.
 - **More-columns dots.** The header of the actions column shows a three-dots button when more columns are hidden to the right. Click it to scroll right. It disappears at the end of the table.
 - **Multiple independent instances.** Each browser tab has its own data. The **New Window** button opens a fresh, separate copy.
-- **Download App.** The **Download App** link in the header of the [home page](https://platoedes-pty-ltd.github.io/Talika/index.html) downloads the app as `webtalika.html`, so you can keep it on your disk and run it offline. Your data is not in that file; use Export for your data.
+- **Download App.** The **Download App** link in the header of the [home page](https://platoedes-pty-ltd.github.io/WebTalika/index.html) downloads the app as `webtalika.html`, so you can keep it on your disk and run it offline. Your data is not in that file; use Export for your data.
 - **Phones, iPad and other touch screens.** Everything works with a finger:
   - Tap a column's ▾ button to open its menu (Filter, Change type, Rename, Remove); tap it again to close it.
   - Long-press a tab for its menu (Rename, Duplicate, Move left, Move right, Delete).
