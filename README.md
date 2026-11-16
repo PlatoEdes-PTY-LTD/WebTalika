@@ -37,7 +37,7 @@
   - Drag the edge of a column header to resize it.
   - Text fields use 16px text on touch screens, so iOS doesn't zoom in when you tap one.
   - Hover tooltips don't exist on touch screens, so the icon-only buttons have no visible names there; screen readers still announce them.
-- **Fully offline.** Vue 3 and SheetJS are bundled inline in the one HTML file.
+- **Fully offline.** Vue 3 and SheetJS are bundled inline in the one HTML file. Only live sharing needs a network connection.
 - **Live sharing.** Click the people icon, enter your name and send the link. Each person who opens it gives a name and then edits the same document with you in real time, peer to peer through [PeerJS](https://peerjs.com). The document stays in the host's browser. Guests' own saved data is not touched, and it comes back when they leave. Live sharing needs an internet connection. If two people change something at the same moment, the later change wins.
 
 ## Getting started
@@ -84,17 +84,21 @@ On export, each tab becomes a worksheet with the tab's name, in tab order. Colum
 
 ## Data and privacy
 
-All data is stored in your browser's `localStorage`, namespaced per instance. Nothing is sent anywhere. Clearing site data for the page removes your tables, so export to Excel to keep a copy.
+All data is stored in your browser's `localStorage`, namespaced per instance. Nothing is sent anywhere unless you start a live session. In a live session, changes go directly between the browsers in it (WebRTC). The PeerJS signalling server only helps the browsers find each other and does not receive the table. Clearing site data for the page removes your tables, so export to Excel to keep a copy.
 
 ## Tech
 
 - Vue 3 (Composition API), bundled inline
 - SheetJS (`xlsx`), bundled inline
+- PeerJS 1.5.4, loaded from unpkg, for live sharing only
 - Plain HTML and CSS, no build tooling
 
 ## Limitations
 
-- No cross-device sync. Data lives in one browser's storage.
+- No cross-device sync. Data lives in one browser's storage. Live sharing works only while the host's tab is open.
+- In a live session, each change sends the whole document. If two people save at almost the same moment, the later change wins.
+- Live sharing can fail on strict corporate networks that block direct browser-to-browser connections. There is no relay (TURN) server.
+- The share link only works when the app is served over http or https, not opened as a local file.
 - Type inference is a heuristic, so a column may be guessed wrong. Use the change-type tool to fix it.
 - Filters, including tab filters, are not saved. They reset when the page reloads.
 - No undo beyond the confirmation prompts on delete, remove, and reset.

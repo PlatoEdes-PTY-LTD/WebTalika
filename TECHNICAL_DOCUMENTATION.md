@@ -13,7 +13,7 @@
 1. Edit only one file: `webtalika.html`. It holds all the code.
 2. Do not edit the first two `<script>` blocks. They contain the Vue and SheetJS libraries.
 3. Edit only the third `<script>` block, the HTML template, and the CSS.
-4. Keep the app offline. Do not add a network request. Do not add a CDN link.
+4. Keep the app offline. Do not add a network request. Do not add a CDN link. The one exception is PeerJS for live sharing (Section 9.11). The app must work without it.
 5. Keep the data model generic. Do not add a hard-coded column name.
 6. Do not use `window.confirm()` or `window.alert()`. Use the custom modals.
 7. Do not rename the storage keys. They start with `use-case-tracker`. A rename hides the data that users saved.
@@ -32,7 +32,7 @@ Talika (tagline: *The List*) is a dynamic tabular document creator. It was calle
 - One document holds several sheets (tabs), like an Excel workbook. A sheet can filter its entries by the data in another sheet (tab filters).
 - The user exports the table to an Excel file.
 
-The app has no fixed schema. It runs in the browser from one HTML file. It works offline. It uses no server.
+The app has no fixed schema. It runs in the browser from one HTML file. It works offline. It uses no server. Live sharing (Section 9.11) is optional. It needs a network connection.
 
 ---
 
@@ -77,6 +77,10 @@ If the working copy is missing, copy it from the delivery copy. If the delivery 
 | More-columns button | The three-dots button in the header cell of the actions column. It shows when columns are hidden to the right. |
 | Icon-only button | A button that shows an icon and no text. Its text is in the `title` and `aria-label` attributes. |
 | Overlay | The dark layer behind a modal. |
+| Live session | A group of browsers that edit one document together through PeerJS. |
+| Host | The browser that starts a live session. It keeps and saves the document. |
+| Guest | A browser that joins a live session from a share link. It does not save the document. |
+| Share link | The app URL with `#join=<host peer ID>`. |
 
 ---
 
@@ -84,15 +88,16 @@ If the working copy is missing, copy it from the delivery copy. If the delivery 
 
 ### 5.1 File layout
 
-`webtalika.html` has one `<style>` block, one `<div id="app">` template, and three `<script>` blocks.
+`webtalika.html` has one `<style>` block, one `<div id="app">` template, three inline `<script>` blocks, and one external `<script>` for PeerJS.
 
 | Block | Content | Edit? |
 | --- | --- | --- |
 | Script 1 | Vue 3.4.31 global build. | No. |
 | Script 2 | SheetJS xlsx 0.18.5 full build. | No. |
-| Script 3 | App code. It starts with `const { createApp, ref, reactive, computed, nextTick } = Vue;`. It ends with `}).mount('#app');`. | Yes. |
+| PeerJS | `<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js">`, just before script 3. It defines the global `Peer`. | Change the pinned version only. |
+| Script 3 | App code. It starts with `const { createApp, ref, reactive, computed, nextTick, watch, watchEffect } = Vue;`. It ends with `}).mount('#app');`. | Yes. |
 
-The libraries are inline. This makes the file work offline.
+Vue and SheetJS are inline. This makes the file work offline. PeerJS is not inline. If it does not load, `typeof Peer` is `'undefined'`, and only live sharing stops working.
 
 ### 5.2 Order of code in script 3
 
@@ -198,6 +203,8 @@ The labels in the UI come from the `typeLabels` object: Text, Date, Date & Time,
 | `use-case-tracker-filename-v2::<instance>` | localStorage | The name of the last imported file. |
 | `dynadoc_instance_id` | sessionStorage | The instance ID of this tab. |
 | `use-case-tracker-migrated-v2` | localStorage | A flag. It shows that old data was moved. |
+| `webtalika_collab_name` | localStorage | The last name used in a live session. It fills the name dialog. Not per instance. |
+| `webtalika_collab_host` | sessionStorage | `{ id, name }` while this tab hosts a live session. After a reload, the tab hosts again with the same ID. |
 | `use-case-tracker-columns-v2`, `...-filename-v2`, and the old rows key | localStorage | Legacy keys from before multi-instance support. |
 
 **Warning.** Do not rename these keys. The prefix `use-case-tracker` is a legacy name. A rename makes saved data invisible.
@@ -206,6 +213,8 @@ The labels in the UI come from the `typeLabels` object: Text, Date, Date & Time,
 
 - `persist()` saves every sheet and the file name. Call it after any change to columns, rows, or sheets.
 - It catches storage errors and ignores them.
+- In a live session, a guest does not write to storage. This keeps the guest's own document safe.
+- At the end, `persist()` calls `collabAfterPersist()`. In a live session, this sends the change (Section 9.11).
 - `loadPersisted()` runs once at the end of `setup`, after every ref it touches exists. If the sheets key is absent, it loads the pre-sheets keys as one sheet named `Sheet1`.
 - Sort and filter state is not saved. Column order is saved because it is the order of `columns`. Column visibility is saved because `hidden` is on the column object.
 
@@ -263,7 +272,7 @@ The labels in the UI come from the `typeLabels` object: Text, Date, Date & Time,
 
 The toolbar has these items, from left to right: Add Entry, Add Column, Show/Hide Columns, Clear Filters, Search box, Add Tab Filter.
 
-The page header (`.page-head`) has the app name, tagline, and entry count on the left. On the right (`.head-actions`) it has "You are editing <file>" (`.current-file`, shown after an import), then Import Excel, Export Excel, Reset All, and New Window. The header has no description line.
+The page header (`.page-head`) has the app name, tagline, and entry count on the left. On the right (`.head-actions`) it has "You are editing <file>" (`.current-file`, shown after an import), then Import Excel, Export Excel, Share live, Reset All, and New Window. Share live (people icon) gets the class `btn-live` in a session and shows a status dot and the number of people. Reset All is disabled for a guest. The header has no description line.
 
 The app has no Save App button. The **Download App** link in the header of `index.html` (between Documentation and Open the app) downloads the app instead. It is a plain `<a href="webtalika.html" download="webtalika.html">`, with no script.
 
@@ -458,6 +467,55 @@ All dialogs use `.overlay` with `.modal`. A mouse-down on the overlay closes the
 
 ---
 
+### 9.11 Live sharing (PeerJS)
+
+**Purpose.** Several people edit one document at the same time. One person hosts. The others join from a link. Each person gives a name.
+
+**Flow.**
+
+1. The host clicks Share live. `openCollab()` opens the name dialog (`collab.nameOpen`, `nameMode: 'host'`).
+2. `confirmCollabName()` saves the name in `webtalika_collab_name` and calls `startHosting()`. The host peer ID is `webtalika-<random>`. When the peer opens, the session dialog (`collab.panelOpen`) shows the share link (`shareLink`) and a Copy button.
+3. A guest opens the link. `checkJoinLink()` reads `#join=<id>` on load and on `hashchange`. It opens the name dialog (`nameMode: 'join'`). Cancel removes the hash.
+4. `joinSession()` makes a peer with a random ID. `connectToHost()` connects with `metadata: { name }`.
+5. On connect, the host sends the whole document to the guest. `sendPeers()` sends the list of people to all guests.
+
+**State.** `collab` is a reactive object near `showToast` at the top of `setup`: `role` (`null`, `'host'`, `'guest'`), `status` (`''`, `'connecting'`, `'live'`, `'reconnecting'`), `name`, `myId`, `hostId`, `peers` (`[{ id, name, host }]`), and the dialog flags. The connection objects and timers are plain `let` variables next to it. They are there, not at the end of `setup`, because `persist()` uses them.
+
+**Messages.** Each message is an object with `t`.
+
+| `t` | Direction | Content |
+| --- | --- | --- |
+| `doc` | guest to host | `{ doc, seq }`. `seq` counts the documents that the guest sent. |
+| `doc` | host to guests | `{ doc, by, from?, seq? }`. `by` is the editor's name. `from` and `seq` copy the guest message that caused it. |
+| `peers` | host to guests | `{ list }`: everyone in the session, host first. |
+| `end` | host to guests | The host stopped sharing. |
+
+**Document snapshot.** `collabSnapshot()` returns `{ fileName, sheets: [{ name, columns, rows: [{ u, values }], index?, hideTotals? }] }`. `u` is the row's `_uid`. A row gets a `_uid` the first time a snapshot includes it. `_uid` is not saved to storage.
+
+**Sync rules.**
+
+- Every change calls `persist()`. `collabAfterPersist()` waits 60 ms and then `collabFlush()` sends a snapshot. Many changes in a short time make one message.
+- The host applies a guest document with `applyRemoteDoc()`. Then it sends its own snapshot to every guest, the sender too. So all browsers end with the host's version.
+- A guest skips a `doc` with `from` equal to its own ID and `seq` lower than its last sent `seq`. A newer document from it is already on the way.
+- `applyRemoteDoc()` first calls `collabFlush()`, so a waiting local change is sent and not lost.
+- If two people change the document at the same time, the later change wins. There is no merge.
+
+**What `applyRemoteDoc()` keeps.** A row with a known `_uid` keeps its local `_key`. So an open entry dialog (`editingKey`) and the selection stay correct. It also keeps the shown sheet (by name), each sheet's view state (search, sort, filters, tab filters), and the table scroll position. While a rename or a drag is in progress (`collabBusy`), it holds the document in `collabPending`. A `watch` applies it when the rename or drag ends. It sets `collabApplying`, so its own `persist()` call does not send the document again.
+
+**Connection loss.**
+
+- A peer that loses the signalling server calls `peer.reconnect()`.
+- When the host connection closes, `onHostLost()` tries again 5 times, every 3 seconds. Then it calls `stopCollab()`.
+- After a reload, the host reads `webtalika_collab_host` and hosts again with the same ID. The server can keep the old ID for some seconds (`unavailable-id`). `startHosting()` then tries again 5 times, every 2 seconds.
+
+**Leave and stop.** `stopCollab()` sends `end` (host only), destroys the peer after 300 ms, and clears `webtalika_collab_host` and the session state. For a guest, it removes the hash and calls `loadPersisted()`. This shows the guest's own document again.
+
+**Constraints.**
+
+- The share link uses `location.origin + location.pathname`. A `file://` page cannot give a link that works on another computer. Serve the app over http or https.
+- PeerJS uses its free public signalling server (`0.peerjs.com`) and public STUN. There is no TURN server, so some strict networks block the connection.
+- The whole document goes in each message. PeerJS's default binary serialization splits large messages into chunks.
+
 ## 10. Styling
 
 - CSS variables are in `:root`: `--ink`, `--ink-soft`, `--line`, `--line-soft`, `--paper`, `--panel`, `--teal`, `--teal-dark`, `--teal-tint`, `--amber`, `--amber-tint`, `--danger`, `--danger-tint`, `--radius`, `--shadow`.
@@ -528,6 +586,9 @@ thead th.col-actions-th { z-index: 4; }  /* also sticky right */
 | A `ResizeObserver` callback must not change layout in the same frame. | The browser logs "ResizeObserver loop completed with undelivered notifications". Use `requestAnimationFrame` in the callback. |
 | A scroll event closes the filter popover. | A global capture listener on `window` does this. It also fires when `.table-wrap` scrolls. This is correct. |
 | An element must not have both `title` and `:title`. | Vue shows a duplicate attribute warning. Use one of them. |
+| A guest must not write to storage. | The guest's own document is under the same keys. `persist()` checks `collab.role`. `resetAll()` removes keys, so Reset All is disabled for a guest. |
+| A remote update must not reset the view. | `loadSheets()` resets the selection, the filters, and the scroll. `applyRemoteDoc()` saves and restores them. Keep this when you change `loadSheets()` or `activateSheet()`. |
+| Code that `persist()` calls must not use a variable declared later in `setup`. | `persist()` can run before the end of `setup`. A `const` declared later causes a temporal dead zone error. Declare live sharing state near the top. |
 
 ---
 
@@ -547,6 +608,10 @@ thead th.col-actions-th { z-index: 4; }  /* also sticky right */
 ## 13. Test method
 
 No automated test suite exists. Each session writes short Playwright scripts. Chromium is installed. Use `require('playwright')` in a Node script. Open the file with `file:///home/claude/webtalika.html`. If `require` fails, set `NODE_PATH` to the output of `npm root -g`.
+
+**Reading app state.** The Vue build is the production build. `__vue_app__._instance` is `null` in it. Use `document.querySelector('#app')._vnode.component.setupState`. Refs in it are already unwrapped.
+
+**Testing live sharing.** Serve the folder over http (`python3 -m http.server 8765`); a `file://` page cannot share. Open each person in a separate browser context (`browser.newContext()`). Contexts do not share storage, like separate people. The test needs internet access for unpkg and the PeerJS server. Wait for `collab.status === 'live'` before each check. Check that: guests receive the document; an open entry dialog stays open while a remote change arrives; all browsers end with the same rows; the host saves the document; the guest's own storage does not change; leaving restores the guest's data; the host resumes after a reload.
 
 **Selectors that work:**
 
@@ -652,6 +717,7 @@ No automated test suite exists. Each session writes short Playwright scripts. Ch
 | 44 | Touch screens: long-press a tab for its menu; Move left and Move right in the tab menu; column order arrows in Show/Hide Columns; resizing with pointer events; header buttons always shown without hover; 16px text in fields; bigger tap targets; smaller padding on phones; no native drag and drop on touch-only devices. |
 | 45 | Column menu: the filter, change-type, rename and remove icons in each header are replaced by one ▾ button that opens a menu on hover (mouse) or tap (touch). |
 | 46 | The app file is renamed from `talika.html` to `webtalika.html`. `index.html` and the docs link to the new name. `talika.html` is now a redirect page to `webtalika.html`. |
+| 47 | Live sharing with PeerJS. Share live button in the header. The host enters a name and gets a `#join=` link. Each guest enters a name. Changes go as whole-document snapshots through the host; the later change wins. Rows get a `_uid`, so dialogs, selection, tabs, filters, and scroll survive a remote update. Guests do not write to storage, and leaving restores their data. The host resumes after a reload. `index.html` lists the feature as tool 13. |
 
 ---
 
@@ -664,4 +730,6 @@ No automated test suite exists. Each session writes short Playwright scripts. Ch
   4. Think about `chrome.storage.local` with the `unlimitedStorage` permission for large tables.
 - **Export default name.** It is still `use-cases-<date>`. The user can ask to change it to `dynadoc-<date>`.
 - **Storage key prefix.** It is still `use-case-tracker`. Do not change it unless you also write a migration.
+- **Live sharing merge.** Changes are whole-document, and the later change wins. For a merge per cell, send operations per row, or use a CRDT such as Yjs.
+- **Live sharing on strict networks.** Add a TURN server to the `Peer` options if users report that they cannot connect.
 - **Design document.** It does not yet describe the table scroll, the more-columns button, the icon-only buttons, or the toolbar order. The as-of date in the byline is 9 October 2026.

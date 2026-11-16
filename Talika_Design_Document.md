@@ -8,7 +8,7 @@ DynaDoc is a single-file, offline HTML app for tracking any flat dataset the use
 
 It grew out of an earlier "Use Case Tracker" that hard-coded ID, Status, Description and similar fields; DynaDoc generalizes that into eight typed column kinds so the same file can track use cases, contacts, inventory, or any other tabular data.
 
-It runs entirely in the browser: no server, no account, no network calls beyond loading the page. Opening the HTML file is the whole installation.
+It runs entirely in the browser: no server, no account, no network calls beyond loading the page. Opening the HTML file is the whole installation. The one optional exception is live sharing, which uses the network to connect browsers to each other.
 
 ## Architecture
 
@@ -102,7 +102,7 @@ The toolbar's **New Window** button opens a second tab with a freshly generated 
 
 ## Interface
 
-The toolbar carries Add Entry, Add Column, Show/Hide Columns, Clear Filters, search, and Add Tab Filter; Import Excel, Export Excel, Reset All, and New Window sit at the right of the header.
+The toolbar carries Add Entry, Add Column, Show/Hide Columns, Clear Filters, search, and Add Tab Filter; Import Excel, Export Excel, Share live, Reset All, and New Window sit at the right of the header.
 
 Show/Hide Columns is a round eye button. It opens a dialog with a checkbox for each column; changes apply immediately, and Show All restores every column. When any column is hidden the button turns red, its icon becomes a crossed-out eye, and a badge shows how many columns are hidden, so a narrowed view is never mistaken for missing data. Hiding only affects the table: hidden columns keep their values, stay searchable, appear in the bulk-edit dialog, and are still exported. The add and edit dialog leaves them out by default, with a "Show hidden columns" checkbox to bring them back; their values are kept on save either way. Hiding a column clears any filter or sort on it, so rows are never filtered or ordered by something the user can't see.
 
@@ -121,9 +121,21 @@ Add and edit use the same dialog, rendering one field per column based on its ty
 
 Changing a column's type converts each stored value through its text form: Number keeps only text that parses as a number, Date and Date & Time keep only text that reads as a date, a Link becomes a one-entry List, and a List becomes a Link from its first entry. The change dialog counts the values that can't convert and will be cleared before the user confirms, and the column's filter is reset.
 
+## Live sharing
+
+Several people can edit one document at the same time. The person who starts the session is the host, and the document stays in the host's browser. Everyone else joins as a guest from a link.
+
+- **Starting.** The host clicks the people icon in the header and enters a name. The app shows a link (the app's address followed by `#join=` and the host's id) with a Copy button.
+- **Joining.** Opening the link asks for a name, then loads the host's document. The name is remembered for next time. The header button then shows a green dot and how many people are in the session, and its dialog lists them with "host" and "you" tags. Short messages say when someone joins or leaves.
+- **Syncing.** Every change sends the whole document. A guest's change goes to the host, which applies it and sends the result to everyone, so all browsers end up with the host's version. If two people save at almost the same moment, the later change wins; there is no merge.
+- **Staying out of the way.** An incoming change doesn't disturb the person receiving it: an open edit dialog stays open on the same entry, and the selection, the current tab, search, sort, filters and scroll position are kept. An update that arrives during a rename or a drag waits until it ends.
+- **Guests' own data.** A guest's own saved document is never overwritten: guests don't save to their browser storage, and Reset All is turned off for them. Leaving the session, or the host stopping it, brings the guest's own document back.
+- **Dropped connections.** If the host's connection drops, guests retry for about 15 seconds. If the host reloads the tab, the session restarts with the same link, so guests reconnect.
+- **How it connects.** PeerJS, loaded from a CDN, sets up direct WebRTC connections between the browsers. Its public signalling server only helps the browsers find each other and doesn't receive the table. Without a network connection the rest of the app works as before, and the button explains why sharing is unavailable.
+
 ## Persistence
 
-Everything is stored in the browser via `localStorage` and `sessionStorage`; nothing leaves the machine.
+Everything is stored in the browser via `localStorage` and `sessionStorage`; nothing leaves the machine unless a live session is started.
 
 | Key | Scope | Holds |
 | --- | --- | --- |
@@ -133,13 +145,17 @@ Everything is stored in the browser via `localStorage` and `sessionStorage`; not
 | `use-case-tracker-filename-v2::<instance>` | per tab | last imported file's name |
 | `dynadoc_instance_id` | per tab (sessionStorage) | that tab's instance id |
 | `use-case-tracker-migrated-v2` | browser-wide | one-time flag marking legacy data as migrated |
+| `webtalika_collab_name` | browser-wide | the name last used in a live session |
+| `webtalika_collab_host` | per tab (sessionStorage) | the host's id and name while the tab hosts a session, so a reload resumes it |
 
 Closing the tab doesn't clear anything — `sessionStorage` only drops the instance pointer, not the data itself, which stays in `localStorage` under that instance's keys.
 
 ## Limitations and possible next steps
 
 - Type inference is a heuristic: a text column containing semicolons is read as a List, and a free-text column with few distinct values is read as Set. The type can be changed afterwards, but a conversion clears any value that doesn't fit the new type.
-- No cross-device sync — data lives in one browser's storage, not shared automatically between machines.
+- No cross-device sync — data lives in one browser's storage, not shared automatically between machines. Live sharing works only while the host's tab is open.
+- Live sharing sends the whole document with each change, and the later change wins. A per-cell merge would need row-level messages or a CRDT such as Yjs.
+- Live sharing has no relay (TURN) server, so it can fail on strict corporate networks. The share link only works when the app is served over http or https.
 - Filters, including tab filters, are not saved; they reset when the page reloads.
 - No undo beyond the confirmation prompts on delete, remove, and reset actions.
 
