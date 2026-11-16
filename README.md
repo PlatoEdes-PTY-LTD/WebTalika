@@ -38,6 +38,7 @@
   - Text fields use 16px text on touch screens, so iOS doesn't zoom in when you tap one.
   - Hover tooltips don't exist on touch screens, so the icon-only buttons have no visible names there; screen readers still announce them.
 - **Fully offline.** Vue 3 and SheetJS are bundled inline in the one HTML file.
+- **Live sharing.** Click the people icon, enter your name and send the link. Each person who opens it gives a name and then edits the same document with you in real time, peer to peer through [PeerJS](https://peerjs.com). The document stays in the host's browser. Guests' own saved data is not touched, and it comes back when they leave. Live sharing needs an internet connection. If two people change something at the same moment, the later change wins.
 
 ## Getting started
 

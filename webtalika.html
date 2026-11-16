@@ -357,6 +357,20 @@
   .combo-list .combo-new{color:var(--teal-dark);font-weight:600;}
   .combo-empty{padding:8px 11px;font-size:12.5px;color:var(--ink-soft);}
 
+  /* live sharing */
+  .btn-live{background:var(--teal-tint);border-color:#c7e3dd;color:var(--teal-dark);}
+  .live-label{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--teal-dark);font-variant-numeric:tabular-nums;}
+  .live-dot{width:7px;height:7px;border-radius:50%;background:var(--amber);flex-shrink:0;}
+  .live-dot.live{background:#1f9d55;box-shadow:0 0 0 3px rgba(31,157,85,.18);}
+  .collab-intro{margin:0 0 16px;color:var(--ink-soft);font-size:13px;}
+  .share-link-row{display:flex;gap:8px;}
+  .field .share-link-row input[type=text]{flex:1;min-width:0;width:auto;font-family:ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace;font-size:12px;}
+  .peer-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}
+  .peer-list li{display:flex;align-items:center;gap:9px;font-size:13.5px;min-width:0;}
+  .peer-avatar{width:26px;height:26px;border-radius:50%;background:var(--teal-tint);color:var(--teal-dark);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;}
+  .peer-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .peer-tag{font-size:11px;color:var(--ink-soft);border:1px solid var(--line);border-radius:999px;padding:0 7px;flex-shrink:0;}
+
   /* toast */
   .toast{
     position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
@@ -431,7 +445,11 @@
       <button class="btn" :disabled="!hasExportableData" @click="openExportDialog" aria-label="Export Excel" title="Export Excel">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </button>
-      <button class="btn btn-danger-text" :disabled="isBlankWorkbook" @click="resetAllOpen = true" title="Reset All: delete all sheets, rows and columns" aria-label="Reset All">
+      <button class="btn" :class="{ 'btn-live': collab.role }" @click="openCollab" :title="collabTitle" aria-label="Share live">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        <span v-if="collab.role" class="live-label"><span class="live-dot" :class="collab.status"></span>{{ collab.status === 'live' ? collab.peers.length : '…' }}</span>
+      </button>
+      <button class="btn btn-danger-text" :disabled="isBlankWorkbook || collab.role === 'guest'" @click="resetAllOpen = true" :title="collab.role === 'guest' ? 'Reset All is off while you are a guest in a live session' : 'Reset All: delete all sheets, rows and columns'" aria-label="Reset All">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
       </button>
       <button class="btn" @click="openNewInstance" title="New Window: open an independent copy of WebTalika in a new tab. It does not share data with this one." aria-label="New Window">
@@ -1076,6 +1094,64 @@
     </div>
   </div>
 
+  <!-- Live sharing: your name -->
+  <div class="overlay" v-if="collab.nameOpen" @mousedown.self="cancelCollabName">
+    <div class="modal modal-small">
+      <div class="modal-head">
+        <h2>{{ collab.nameMode === 'join' ? 'Join live session' : 'Share live' }}</h2>
+      </div>
+      <div class="modal-body">
+        <p class="collab-intro" v-if="collab.nameMode === 'join'">Someone shared a WebTalika document with you. Everyone in the session sees your changes as you make them. Your own saved data is not touched.</p>
+        <p class="collab-intro" v-else>You'll get a link to send. Anyone who opens it can view and edit this document with you while this tab stays open.</p>
+        <div class="field" style="margin-bottom:0;">
+          <label>Your name</label>
+          <input class="collab-name-input" type="text" v-model="collab.nameDraft" maxlength="40" placeholder="e.g. Priya" @keydown.enter.prevent="confirmCollabName">
+          <div class="hint">Shown to the others in the session.</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" @click="cancelCollabName">Cancel</button>
+        <button class="btn btn-primary" :disabled="!collab.nameDraft.trim()" @click="confirmCollabName">{{ collab.nameMode === 'join' ? 'Join' : 'Start sharing' }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live sharing: session -->
+  <div class="overlay" v-if="collab.panelOpen" @mousedown.self="collab.panelOpen = false">
+    <div class="modal modal-small">
+      <div class="modal-head">
+        <h2>Live session</h2>
+        <span class="live-label"><span class="live-dot" :class="collab.status"></span>{{ collab.status === 'live' ? 'Live' : (collab.status === 'reconnecting' ? 'Reconnecting…' : 'Connecting…') }}</span>
+      </div>
+      <div class="modal-body">
+        <div class="field" v-if="collab.role === 'host'">
+          <label>Share this link</label>
+          <div class="share-link-row">
+            <input type="text" readonly :value="shareLink || 'Creating link…'" @focus="$event.target.select()">
+            <button class="btn btn-primary" :disabled="!shareLink" @click="copyShareLink">Copy</button>
+          </div>
+          <div class="hint">Anyone with the link can edit. The session lasts while this tab stays open, and the document is saved in this browser.</div>
+        </div>
+        <p class="collab-intro" v-else>You are editing a shared document. Leaving brings back your own data.</p>
+        <div class="field" style="margin-bottom:0;">
+          <label>In this session ({{ collab.peers.length }})</label>
+          <ul class="peer-list">
+            <li v-for="p in collab.peers" :key="p.id">
+              <span class="peer-avatar">{{ (p.name || '?').charAt(0).toUpperCase() }}</span>
+              <span class="peer-name">{{ p.name }}</span>
+              <span class="peer-tag" v-if="p.host">host</span>
+              <span class="peer-tag" v-if="p.id === collab.myId">you</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger-text" @click="stopCollab">{{ collab.role === 'host' ? 'Stop sharing' : 'Leave session' }}</button>
+        <button class="btn btn-primary" @click="collab.panelOpen = false">Done</button>
+      </div>
+    </div>
+  </div>
+
   <transition name="fade">
     <div class="toast" v-if="toast">{{ toast }}</div>
   </transition>
@@ -1121,8 +1197,10 @@ var o=((a=s[17])==null?void 0:a[0])?Ob(e,e[_b(s[17][0].data)][0]):[];var l=vb(s[
 var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.s.r;c<=n.e.r;++c){i=Ta(c);for(f=n.s.c;f<=n.e.c;++f){r=s[f]+i;t=l?(e[c]||[])[f]:e[r];a="";if(t===undefined)continue;else if(t.F!=null){r=t.F;if(!t.f)continue;a=t.f;if(r.indexOf(":")==-1)r=r+":"+r}if(t.f!=null)a=t.f;else if(t.t=="z")continue;else if(t.t=="n"&&t.v!=null)a=""+t.v;else if(t.t=="b")a=t.v?"TRUE":"FALSE";else if(t.w!==undefined)a="'"+t.w;else if(t.v===undefined)continue;else if(t.t=="s")a="'"+t.v;else a=""+t.v;o[o.length]=r+"="+a}}return o}function xw(e,r,t){var a=t||{};var n=+!a.skipHeader;var i=e||{};var s=0,f=0;if(i&&a.origin!=null){if(typeof a.origin=="number")s=a.origin;else{var o=typeof a.origin=="string"?Oa(a.origin):a.origin;s=o.r;f=o.c}}var l;var c={s:{c:0,r:0},e:{c:f,r:s+r.length-1+n}};if(i["!ref"]){var h=Da(i["!ref"]);c.e.c=Math.max(c.e.c,h.e.c);c.e.r=Math.max(c.e.r,h.e.r);if(s==-1){s=h.e.r+1;c.e.r=s+r.length-1+n}}else{if(s==-1){s=0;c.e.r=r.length-1+n}}var u=a.header||[],d=0;r.forEach(function(e,r){rr(e).forEach(function(t){if((d=u.indexOf(t))==-1)u[d=u.length]=t;var o=e[t];var c="z";var h="";var v=Ra({c:f+d,r:s+r+n});l=Rw(i,v);if(o&&typeof o==="object"&&!(o instanceof Date)){i[v]=o}else{if(typeof o=="number")c="n";else if(typeof o=="boolean")c="b";else if(typeof o=="string")c="s";else if(o instanceof Date){c="d";if(!a.cellDates){c="n";o=fr(o)}h=a.dateNF||X[14]}else if(o===null&&a.nullError){c="e";o=0}if(!l)i[v]=l={t:c,v:o};else{l.t=c;l.v=o;delete l.w;delete l.R;if(h)l.z=h}if(h)l.z=h}})});c.e.c=Math.max(c.e.c,f+u.length-1);var v=Ta(s);if(n)for(d=0;d<u.length;++d)i[ya(d+f)+v]={t:"s",v:u[d]};i["!ref"]=Na(c);return i}function Ow(e,r){return xw(null,e,r)}function Rw(e,r,t){if(typeof r=="string"){if(Array.isArray(e)){var a=Oa(r);if(!e[a.r])e[a.r]=[];return e[a.r][a.c]||(e[a.r][a.c]={t:"z"})}return e[r]||(e[r]={t:"z"})}if(typeof r!="number")return Rw(e,Ra(r));return Rw(e,Ra({r:r,c:t||0}))}function Iw(e,r){if(typeof r=="number"){if(r>=0&&e.SheetNames.length>r)return r;throw new Error("Cannot find sheet # "+r)}else if(typeof r=="string"){var t=e.SheetNames.indexOf(r);if(t>-1)return t;throw new Error("Cannot find sheet name |"+r+"|")}else throw new Error("Cannot find sheet |"+r+"|")}function Nw(){return{SheetNames:[],Sheets:{}}}function Dw(e,r,t,a){var n=1;if(!t)for(;n<=65535;++n,t=undefined)if(e.SheetNames.indexOf(t="Sheet"+n)==-1)break;if(!t||e.SheetNames.length>=65535)throw new Error("Too many worksheets");if(a&&e.SheetNames.indexOf(t)>=0){var i=t.match(/(^.*?)(\d+)$/);n=i&&+i[2]||0;var s=i&&i[1]||t;for(++n;n<=65535;++n)if(e.SheetNames.indexOf(t=s+n)==-1)break}Jp(t);if(e.SheetNames.indexOf(t)>=0)throw new Error("Worksheet with name |"+t+"| already exists!");e.SheetNames.push(t);e.Sheets[t]=r;return t}function Fw(e,r,t){if(!e.Workbook)e.Workbook={};if(!e.Workbook.Sheets)e.Workbook.Sheets=[];var a=Iw(e,r);if(!e.Workbook.Sheets[a])e.Workbook.Sheets[a]={};switch(t){case 0:;case 1:;case 2:break;default:throw new Error("Bad sheet visibility setting "+t);}e.Workbook.Sheets[a].Hidden=t}function Pw(e,r){e.z=r;return e}function Lw(e,r,t){if(!r){delete e.l}else{e.l={Target:r};if(t)e.l.Tooltip=t}return e}function Mw(e,r,t){return Lw(e,"#"+r,t)}function Uw(e,r,t){if(!e.c)e.c=[];e.c.push({t:r,a:t||"SheetJS"})}function Bw(e,r,t,a){var n=typeof r!="string"?r:Da(r);var i=typeof r=="string"?r:Na(r);for(var s=n.s.r;s<=n.e.r;++s)for(var f=n.s.c;f<=n.e.c;++f){var o=Rw(e,s,f);o.t="n";o.F=i;delete o.v;if(s==n.s.r&&f==n.s.c){o.f=t;if(a)o.D=true}}return e}var Ww={encode_col:ya,encode_row:Ta,encode_cell:Ra,encode_range:Na,decode_col:Ca,decode_row:ka,split_cell:xa,decode_cell:Oa,decode_range:Ia,format_cell:Pa,sheet_add_aoa:Ma,sheet_add_json:xw,sheet_add_dom:Gm,aoa_to_sheet:Ua,json_to_sheet:Ow,table_to_sheet:jm,table_to_book:Xm,sheet_to_csv:yw,sheet_to_txt:Sw,sheet_to_json:Aw,sheet_to_html:Vm,sheet_to_formulae:_w,sheet_to_row_object_array:Aw,sheet_get_cell:Rw,book_new:Nw,book_append_sheet:Dw,book_set_sheet_visibility:Fw,cell_set_number_format:Pw,cell_set_hyperlink:Lw,cell_set_internal_link:Mw,cell_add_comment:Uw,sheet_set_array_formula:Bw,consts:{SHEET_VISIBLE:0,SHEET_HIDDEN:1,SHEET_VERY_HIDDEN:2}};var Hw;function zw(e){Hw=e}function Vw(e,r){var t=Hw();var a=r==null?{}:r;if(e==null||e["!ref"]==null){t.push(null);return t}var n=Da(e["!ref"]);var i=a.FS!==undefined?a.FS:",",s=i.charCodeAt(0);var f=a.RS!==undefined?a.RS:"\n",o=f.charCodeAt(0);var l=new RegExp((i=="|"?"\\|":i)+"+$");var c="",h=[];a.dense=Array.isArray(e);var u=a.skipHidden&&e["!cols"]||[];var d=a.skipHidden&&e["!rows"]||[];for(var v=n.s.c;v<=n.e.c;++v)if(!(u[v]||{}).hidden)h[v]=ya(v);var p=n.s.r;var g=false,m=0;t._read=function(){if(!g){g=true;return t.push("\ufeff")}while(p<=n.e.r){++p;if((d[p-1]||{}).hidden)continue;c=Cw(e,n,p-1,h,s,o,i,a);if(c!=null){if(a.strip)c=c.replace(l,"");if(c||a.blankrows!==false)return t.push((m++?f:"")+c)}}return t.push(null)};return t}function Gw(e,r){var t=Hw();var a=r||{};var n=a.header!=null?a.header:Bm;var i=a.footer!=null?a.footer:Wm;t.push(n);var s=Ia(e["!ref"]);a.dense=Array.isArray(e);t.push(zm(e,s,a));var f=s.s.r;var o=false;t._read=function(){if(f>s.e.r){if(!o){o=true;t.push("</table>"+i)}return t.push(null)}while(f<=s.e.r){t.push(Um(e,s,f,a));++f;break}};return t}function jw(e,r){var t=Hw({objectMode:true});if(e==null||e["!ref"]==null){t.push(null);return t}var a={t:"n",v:0},n=0,i=1,s=[],f=0,o="";var l={s:{r:0,c:0},e:{r:0,c:0}};var c=r||{};var h=c.range!=null?c.range:e["!ref"];if(c.header===1)n=1;else if(c.header==="A")n=2;else if(Array.isArray(c.header))n=3;switch(typeof h){case"string":l=Da(h);break;case"number":l=Da(e["!ref"]);l.s.r=h;break;default:l=h;}if(n>0)i=0;var u=Ta(l.s.r);var d=[];var v=0;var p=Array.isArray(e);var g=l.s.r,m=0;var b={};if(p&&!e[g])e[g]=[];var w=c.skipHidden&&e["!cols"]||[];var k=c.skipHidden&&e["!rows"]||[];for(m=l.s.c;m<=l.e.c;++m){if((w[m]||{}).hidden)continue;d[m]=ya(m);a=p?e[g][m]:e[d[m]+u];switch(n){case 1:s[m]=m-l.s.c;break;case 2:s[m]=d[m];break;case 3:s[m]=c.header[m-l.s.c];break;default:if(a==null)a={w:"__EMPTY",t:"s"};o=f=Pa(a,null,c);v=b[f]||0;if(!v)b[f]=1;else{do{o=f+"_"+v++}while(b[o]);b[f]=v;b[o]=1}s[m]=o;}}g=l.s.r+i;t._read=function(){while(g<=l.e.r){if((k[g-1]||{}).hidden)continue;var r=Tw(e,l,g,d,n,s,p,c);++g;if(r.isempty===false||(n===1?c.blankrows!==false:!!c.blankrows)){t.push(r.row);return}}return t.push(null)};return t}var Xw={to_json:jw,to_html:Gw,to_csv:Vw,set_readable:zw};if(typeof vm!=="undefined")e.parse_xlscfb=vm;e.parse_zip=Xb;e.read=iw;e.readFile=sw;e.readFileSync=sw;e.write=gw;e.writeFile=bw;e.writeFileSync=bw;e.writeFileAsync=kw;e.utils=Ww;e.writeXLSX=pw;e.writeFileXLSX=ww;e.SSF=Ve;if(typeof Xw!=="undefined")e.stream=Xw;if(typeof Ke!=="undefined")e.CFB=Ke;if(typeof require!=="undefined"){var $w=undefined;if(($w||{}).Readable)zw($w.Readable)}}if(typeof exports!=="undefined")make_xlsx_lib(exports);else if(typeof module!=="undefined"&&module.exports)make_xlsx_lib(module.exports);else if(typeof define==="function"&&define.amd)define("xlsx",function(){if(!XLSX.version)make_xlsx_lib(XLSX);return XLSX});else make_xlsx_lib(XLSX);if(typeof window!=="undefined"&&!window.XLSX)try{window.XLSX=XLSX}catch(e){}
 
 </script>
+<!-- PeerJS: live sharing (needs a network connection; the rest of the app works offline without it) -->
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
-const { createApp, ref, reactive, computed, nextTick, watchEffect } = Vue;
+const { createApp, ref, reactive, computed, nextTick, watch, watchEffect } = Vue;
 
 
 /* ---------------- Combobox component ---------------- */
@@ -1650,6 +1728,29 @@ createApp({
       showToast._t = setTimeout(() => (toast.value = ''), 2600);
     }
 
+    /* live sharing state (the code is under "live sharing" near the end of setup) */
+    const collab = reactive({
+      role: null,       // null | 'host' | 'guest'
+      status: '',       // '' | 'connecting' | 'live' | 'reconnecting'
+      name: '',         // this person's name
+      myId: '',         // this browser's peer id
+      hostId: '',       // the host's peer id (the id in the share link)
+      peers: [],        // [{ id, name, host }] everyone in the session, host first
+      nameOpen: false,  // "your name" dialog
+      nameMode: 'host', // 'host' | 'join'
+      nameDraft: '',
+      panelOpen: false  // session dialog: link and who is in
+    });
+    let collabPeer = null;           // Peer
+    let collabHostConn = null;       // guest: connection to the host
+    const collabGuests = new Map();  // host: peer id -> { conn, name }
+    let collabApplying = false;      // true while a remote document is loaded, so it is not sent back out
+    let collabSendTimer = null;
+    let collabSendSeq = 0;           // guest: number of the last document sent
+    let collabPending = null;        // remote document held back while a rename or drag is in progress
+    let collabRetries = 0;
+    let collabRetryTimer = null;
+
     /* ---- sheets ----
        The active sheet's data lives in `columns` / `rows`, so the rest of the
        app works on it directly. Every other sheet keeps its data on its entry
@@ -1733,9 +1834,13 @@ createApp({
             return out;
           })
         };
-        localStorage.setItem(SHEETS_KEY, JSON.stringify(data));
-        localStorage.setItem(FILE_NAME_KEY, currentFileName.value || '');
+        // a guest is editing someone else's document: leave their own saved data alone
+        if (collab.role !== 'guest') {
+          localStorage.setItem(SHEETS_KEY, JSON.stringify(data));
+          localStorage.setItem(FILE_NAME_KEY, currentFileName.value || '');
+        }
       } catch (e) { /* storage unavailable — ignore */ }
+      collabAfterPersist();
     }
 
     function emptyValues() { return emptyValuesFor(columns); }
@@ -3101,9 +3206,325 @@ createApp({
       showToast(sheets.length === 1 ? 'Exported Excel file' : `Exported Excel file with ${sheets.length} sheets`);
     }
 
+    /* ---- live sharing (PeerJS) ----
+       One person hosts: their browser keeps the document and saves it as usual.
+       Others open the share link (#join=<host peer id>), give a name, and get a
+       live copy. Every change goes out as a whole-document snapshot: a guest
+       sends theirs to the host, which loads it and sends the result to every
+       guest, the sender included, so everyone ends in the host's order. When
+       two people change something at the same moment, the later one wins.
+       Rows carry a stable `_uid` so open dialogs, selection, the active tab,
+       filters and scroll survive an incoming update. Guests never write their
+       own saved data; leaving a session brings it back. */
+    const COLLAB_NAME_KEY = 'webtalika_collab_name';  // localStorage: last name used
+    const COLLAB_HOST_KEY = 'webtalika_collab_host';  // sessionStorage: resume hosting after a reload
+    const shareLink = computed(() => (collab.role === 'host' && collab.status === 'live')
+      ? location.origin + location.pathname + '#join=' + collab.hostId : '');
+    const collabTitle = computed(() => !collab.role
+      ? 'Share live: send a link so others can edit this document with you'
+      : collab.status === 'live'
+        ? 'Live session: ' + collab.peers.map(p => p.name).join(', ')
+        : (collab.status === 'reconnecting' ? 'Live session: reconnecting…' : 'Live session: connecting…'));
+
+    function collabUid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+    function collabSavedName() { try { return localStorage.getItem(COLLAB_NAME_KEY) || ''; } catch (e) { return ''; } }
+    function peerLibLoaded() {
+      if (typeof Peer !== 'undefined') return true;
+      showToast('Live sharing needs an internet connection (PeerJS could not load)');
+      return false;
+    }
+    function clearJoinHash() {
+      if (/^#join=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+    }
+
+    function collabSnapshot() {
+      return JSON.parse(JSON.stringify({
+        fileName: currentFileName.value || '',
+        sheets: sheets.map(s => {
+          const c = sheetContent(s);
+          const out = {
+            name: s.name,
+            columns: c.columns,
+            rows: c.rows.map(r => { if (!r._uid) r._uid = collabUid(); return { u: r._uid, values: r.values }; })
+          };
+          if (s.isIndex) out.index = true;
+          if (s.hideTotals) out.hideTotals = true;
+          return out;
+        })
+      }));
+    }
+    function hostBroadcast(msg) {
+      collabGuests.forEach(g => { if (g.conn.open) g.conn.send(msg); });
+    }
+    function sendPeers() {
+      collab.peers = [{ id: collab.myId, name: collab.name, host: true },
+        ...Array.from(collabGuests, ([id, g]) => ({ id, name: g.name, host: false }))];
+      hostBroadcast({ t: 'peers', list: collab.peers });
+    }
+
+    /* called by persist(): send local changes, batched over a few ms */
+    function collabAfterPersist() {
+      if (!collab.role || collabApplying || collab.status !== 'live') return;
+      clearTimeout(collabSendTimer);
+      collabSendTimer = setTimeout(collabFlush, 60);
+    }
+    function collabFlush() {
+      if (!collabSendTimer) return;
+      clearTimeout(collabSendTimer);
+      collabSendTimer = null;
+      if (collab.role === 'host') {
+        hostBroadcast({ t: 'doc', doc: collabSnapshot(), by: collab.name });
+      } else if (collab.role === 'guest' && collabHostConn && collabHostConn.open) {
+        collabHostConn.send({ t: 'doc', doc: collabSnapshot(), seq: ++collabSendSeq });
+      }
+    }
+
+    /* a rename box or a drag would be lost by a reload: hold the update until it ends */
+    const collabBusy = computed(() => !!(renamingColId.value || renamingSheetId.value || dragColId.value || dragSheetId.value));
+    watch(collabBusy, busy => {
+      if (!busy && collabPending) applyRemoteDoc(collabPending.doc, collabPending.meta);
+    });
+
+    function applyRemoteDoc(doc, meta = {}) {
+      if (!doc || !Array.isArray(doc.sheets) || !doc.sheets.length) return;
+      if (collabBusy.value) { collabPending = { doc, meta }; return; }
+      collabPending = null;
+      collabFlush(); // send a waiting local change first so it is not lost
+
+      const keyByUid = new Map();
+      sheets.forEach(s => sheetContent(s).rows.forEach(r => { if (r._uid) keyByUid.set(r._uid, r._key); }));
+      const activeName = activeSheet.value ? activeSheet.value.name : null;
+      const keepSelected = Array.from(selected);
+      const wrap = tableWrap.value;
+      const scroll = wrap ? { top: wrap.scrollTop, left: wrap.scrollLeft } : null;
+      stashActiveSheet();
+      const views = new Map(sheets.map(s => [s.name.toLowerCase(), s.view]));
+
+      const list = doc.sheets.map((src, i) => {
+        const srcRows = Array.isArray(src.rows) ? src.rows : [];
+        const sheet = makeSheet(cleanSheetName(src.name) || ('Sheet' + (i + 1)), src.columns || [], srcRows);
+        sheet.rows.forEach((r, j) => {
+          const u = srcRows[j].u;
+          if (!u) return;
+          r._uid = u;
+          if (keyByUid.has(u)) r._key = keyByUid.get(u); // same row: keep its key
+        });
+        if (src.index) sheet.isIndex = true;
+        if (src.hideTotals) sheet.hideTotals = true;
+        sheet.view = views.get(sheet.name.toLowerCase()) || null;
+        return sheet;
+      });
+
+      collabApplying = true;
+      try {
+        loadSheets(list, list.findIndex(s => activeName && sameSheetName(s.name, activeName)));
+        currentFileName.value = doc.fileName || '';
+        const live = new Set(rows.map(r => r._key));
+        keepSelected.forEach(k => { if (live.has(k)) selected.add(k); });
+        persist(); // the host saves it; a guest does not
+      } finally {
+        collabApplying = false;
+      }
+      if (scroll) nextTick(() => { if (tableWrap.value) tableWrap.value.scrollTo(scroll.left, scroll.top); });
+
+      // the host passes the result on to every guest, the sender included
+      if (collab.role === 'host') {
+        hostBroadcast({ t: 'doc', doc: collabSnapshot(), by: meta.by || '', from: meta.from, seq: meta.seq });
+      }
+    }
+
+    /* ---- hosting ---- */
+    function startHosting(id, attempt = 0, resumed = false) {
+      if (!peerLibLoaded()) return;
+      id = id || ('webtalika-' + collabUid() + collabUid());
+      Object.assign(collab, { role: 'host', status: 'connecting', hostId: id, myId: id, peers: [] });
+      const me = collabPeer = new Peer(id);
+      me.on('open', () => {
+        if (collabPeer !== me) return;
+        collab.status = 'live';
+        sendPeers();
+        try { sessionStorage.setItem(COLLAB_HOST_KEY, JSON.stringify({ id, name: collab.name })); } catch (e) { /* ignore */ }
+        if (!resumed) collab.panelOpen = true;
+        else showToast('Live session resumed');
+      });
+      me.on('connection', conn => {
+        conn.on('open', () => {
+          if (collabPeer !== me) return;
+          const name = String((conn.metadata && conn.metadata.name) || 'Guest').trim().slice(0, 40) || 'Guest';
+          collabGuests.set(conn.peer, { conn, name });
+          conn.send({ t: 'doc', doc: collabSnapshot(), by: collab.name });
+          sendPeers();
+          showToast(`${name} joined`);
+        });
+        conn.on('data', msg => {
+          if (collabPeer !== me || !msg || msg.t !== 'doc') return;
+          const g = collabGuests.get(conn.peer);
+          applyRemoteDoc(msg.doc, { by: g ? g.name : '', from: conn.peer, seq: msg.seq });
+        });
+        const drop = () => {
+          const g = collabGuests.get(conn.peer);
+          if (collabPeer !== me || !g || g.conn !== conn) return;
+          collabGuests.delete(conn.peer);
+          sendPeers();
+          showToast(`${g.name} left`);
+        };
+        conn.on('close', drop);
+        conn.on('error', drop);
+      });
+      me.on('disconnected', () => { if (collabPeer === me && !me.destroyed) me.reconnect(); });
+      me.on('error', err => {
+        if (collabPeer !== me) return;
+        // after a reload the signalling server may still hold the old id for a few seconds
+        if (err.type === 'unavailable-id' && attempt < 5) {
+          collabPeer = null;
+          try { me.destroy(); } catch (e) { /* ignore */ }
+          setTimeout(() => { if (collab.role === 'host') startHosting(id, attempt + 1, resumed); }, 2000);
+          return;
+        }
+        if (err.type === 'peer-unavailable') return;
+        showToast('Live sharing stopped: ' + (err.type || err.message || 'connection error'));
+        stopCollab();
+      });
+    }
+
+    /* ---- joining ---- */
+    function joinSession() {
+      if (!peerLibLoaded()) { clearJoinHash(); collab.hostId = ''; return; }
+      Object.assign(collab, { role: 'guest', status: 'connecting', peers: [] });
+      collabSendSeq = 0;
+      collabRetries = 0;
+      const me = collabPeer = new Peer();
+      me.on('open', id => {
+        if (collabPeer !== me) return;
+        collab.myId = id;
+        connectToHost();
+      });
+      me.on('disconnected', () => { if (collabPeer === me && !me.destroyed) me.reconnect(); });
+      me.on('error', err => {
+        if (collabPeer !== me) return;
+        if (err.type === 'peer-unavailable' || err.type === 'network') { onHostLost(); return; }
+        showToast('Live sharing stopped: ' + (err.type || err.message || 'connection error'));
+        stopCollab();
+      });
+    }
+    function connectToHost() {
+      const conn = collabHostConn = collabPeer.connect(collab.hostId, { reliable: true, metadata: { name: collab.name } });
+      conn.on('open', () => {
+        if (collabHostConn !== conn) return;
+        const first = collab.status === 'connecting';
+        collabRetries = 0;
+        collab.status = 'live';
+        showToast(first ? 'Joined the live session' : 'Reconnected');
+      });
+      conn.on('data', msg => {
+        if (collabHostConn !== conn || !msg) return;
+        if (msg.t === 'doc') {
+          // our own change coming back, with a newer one already on its way: skip it
+          if (msg.from && msg.from === collab.myId && msg.seq < collabSendSeq) return;
+          applyRemoteDoc(msg.doc, { by: msg.by });
+        } else if (msg.t === 'peers') {
+          collab.peers = Array.isArray(msg.list) ? msg.list : [];
+        } else if (msg.t === 'end') {
+          stopCollab();
+          showToast('The host ended the live session. Your own data is back.');
+        }
+      });
+      conn.on('close', () => { if (collabHostConn === conn) onHostLost(); });
+    }
+    function onHostLost() {
+      if (collab.role !== 'guest' || collabRetryTimer) return;
+      collabHostConn = null;
+      if (collabRetries < 5) {
+        collabRetries++;
+        if (collab.status === 'live') collab.status = 'reconnecting';
+        collabRetryTimer = setTimeout(() => {
+          collabRetryTimer = null;
+          if (collab.role !== 'guest') return;
+          if (collabPeer && collabPeer.open) connectToHost();
+          else onHostLost();
+        }, 3000);
+        return;
+      }
+      const neverJoined = collab.status === 'connecting';
+      stopCollab();
+      showToast(neverJoined
+        ? 'Could not reach the host. The link may have expired.'
+        : 'Lost the connection to the host. Your own data is back.');
+    }
+
+    /* ---- buttons and dialogs ---- */
+    function openCollab() {
+      if (collab.role) { collab.panelOpen = true; return; }
+      askCollabName('host');
+    }
+    function askCollabName(mode) {
+      collab.nameMode = mode;
+      collab.nameDraft = collab.name || collabSavedName();
+      collab.nameOpen = true;
+      nextTick(() => { const el = document.querySelector('.collab-name-input'); if (el) { el.focus(); el.select(); } });
+    }
+    function confirmCollabName() {
+      const name = collab.nameDraft.trim().slice(0, 40);
+      if (!name) return;
+      try { localStorage.setItem(COLLAB_NAME_KEY, name); } catch (e) { /* ignore */ }
+      collab.name = name;
+      collab.nameOpen = false;
+      if (collab.nameMode === 'host') startHosting();
+      else joinSession();
+    }
+    function cancelCollabName() {
+      collab.nameOpen = false;
+      if (collab.nameMode === 'join') { collab.hostId = ''; clearJoinHash(); }
+    }
+    function copyShareLink() {
+      const link = shareLink.value;
+      if (!link) return;
+      const done = () => showToast('Link copied');
+      const fail = () => showToast('Could not copy: select the link and copy it');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, fail);
+      else fail();
+    }
+    function stopCollab() {
+      const wasGuest = collab.role === 'guest';
+      if (collab.role === 'host') hostBroadcast({ t: 'end' });
+      clearTimeout(collabSendTimer); collabSendTimer = null;
+      clearTimeout(collabRetryTimer); collabRetryTimer = null;
+      const p = collabPeer;
+      collabPeer = null;
+      collabHostConn = null;
+      collabGuests.clear();
+      collabPending = null;
+      if (p) setTimeout(() => { try { p.destroy(); } catch (e) { /* ignore */ } }, 300); // let 'end' go out first
+      try { sessionStorage.removeItem(COLLAB_HOST_KEY); } catch (e) { /* ignore */ }
+      Object.assign(collab, { role: null, status: '', myId: '', hostId: '', peers: [], panelOpen: false });
+      if (wasGuest) {
+        clearJoinHash();
+        currentFileName.value = '';
+        loadPersisted(); // bring back this person's own document
+      }
+    }
+
+    /* a share link opened (or pasted into this tab): ask for a name, then join */
+    function checkJoinLink() {
+      const m = /^#join=([\w-]+)$/.exec(location.hash);
+      if (!m || collab.role) return;
+      collab.hostId = m[1];
+      askCollabName('join');
+    }
+    window.addEventListener('hashchange', checkJoinLink);
+
     loadPersisted();
 
+    if (/^#join=/.test(location.hash)) {
+      checkJoinLink();
+    } else {
+      let resume = null;
+      try { resume = JSON.parse(sessionStorage.getItem(COLLAB_HOST_KEY) || 'null'); } catch (e) { /* ignore */ }
+      if (resume && resume.id && resume.name) { collab.name = resume.name; startHosting(resume.id, 0, true); }
+    }
+
     return {
+      collab, shareLink, collabTitle, openCollab, confirmCollabName, cancelCollabName, copyShareLink, stopCollab,
       tableWrap, hasMoreRight, updateMoreCols, scrollMoreCols,
       columns, rows, search, dialogOpen, editingKey, deleteTarget, toast, form, fileInput, currentFileName,
       filteredRows, typeLabels, selectOptionsFor, formatColumnValue,
