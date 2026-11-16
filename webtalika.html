@@ -102,6 +102,11 @@
   .btn-round.has-filters:hover{filter:brightness(.92);}
   .btn-round.has-filters .btn-count{color:var(--amber);border-color:var(--amber);}
   .col-vis-list{display:flex;flex-direction:column;gap:6px;}
+  .field label.export-opt{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;margin:0 0 6px;cursor:pointer;}
+  .export-scope-note{text-transform:none;letter-spacing:0;font-weight:500;}
+  .export-col-pick{margin:4px 0 0 24px;}
+  .field label.col-vis-item{display:flex;margin:0;font-size:13px;font-weight:400;color:var(--ink);text-transform:none;letter-spacing:0;}
+  .export-col-actions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
   .totals-toggle-sign{font-size:16px;font-weight:700;line-height:1;}
   .btn-round.totals-toggle.is-on{background:var(--teal);border-color:var(--teal);color:#fff;}
   .btn-round.totals-toggle.is-on:hover{background:var(--teal-dark);border-color:var(--teal-dark);}
@@ -920,21 +925,52 @@
     </div>
   </div>
 
-  <!-- Export filename modal -->
+  <!-- Export options modal -->
   <div class="overlay" v-if="exportDialogOpen" @mousedown.self="cancelExport">
-    <div class="modal modal-small">
+    <div class="modal" style="max-width:480px;">
       <div class="modal-head">
         <h2>Export Excel</h2>
       </div>
       <div class="modal-body">
-        <div class="field" style="margin-bottom:0;">
+        <div class="field" v-if="!canPickSaveFile">
           <label>File Name</label>
           <input type="text" v-model="exportFileName" placeholder="e.g. use-cases" @keydown.enter.prevent="confirmExport">
         </div>
+        <div class="field" v-if="sheets.length > 1">
+          <label>Sheets</label>
+          <label class="export-opt"><input type="radio" value="all" v-model="exportSheetScope"> All {{ sheets.length }} sheets</label>
+          <label class="export-opt"><input type="radio" value="current" v-model="exportSheetScope"> Only “{{ activeSheet ? activeSheet.name : '' }}”</label>
+        </div>
+        <div class="field">
+          <label>Rows<span class="export-scope-note" v-if="sheets.length > 1"> · {{ activeSheet ? activeSheet.name : '' }}</span></label>
+          <label class="export-opt"><input type="radio" value="all" v-model="exportRowScope"> All rows ({{ rows.length }})</label>
+          <label class="export-opt"><input type="radio" value="filtered" v-model="exportRowScope"> Current filtered rows ({{ filteredRows.length }})</label>
+          <p class="hint" v-if="exportRowScope === 'filtered'" style="margin:2px 0 0 24px;">Uses the current search, filters and sort order.</p>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>Columns<span class="export-scope-note" v-if="sheets.length > 1"> · {{ activeSheet ? activeSheet.name : '' }}</span></label>
+          <label class="export-opt"><input type="radio" value="all" v-model="exportColScope"> All columns ({{ columns.length }})</label>
+          <label class="export-opt"><input type="radio" value="pick" v-model="exportColScope"> Selected columns ({{ exportColIds.length }} of {{ columns.length }})</label>
+          <div v-if="exportColScope === 'pick'" class="export-col-pick">
+            <div class="export-col-actions">
+              <button type="button" class="btn btn-ghost btn-small" @click="exportColIds = columns.map(c => c.id)">All</button>
+              <button type="button" class="btn btn-ghost btn-small" :disabled="!hiddenColumnCount" @click="exportColIds = visibleColumns.map(c => c.id)">Shown in table</button>
+              <button type="button" class="btn btn-ghost btn-small" @click="exportColIds = []">None</button>
+            </div>
+            <div class="col-vis-list">
+              <label class="col-vis-item" v-for="col in columns" :key="col.id">
+                <input type="checkbox" :value="col.id" v-model="exportColIds">
+                <span class="col-vis-name">{{ col.name }}</span>
+                <span class="field-type" style="margin-left:0;">{{ typeLabels[col.type] }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <p class="hint" v-if="exportSheetScope === 'all' && sheets.length > 1 && (exportRowScope !== 'all' || exportColScope !== 'all')" style="margin:12px 0 0;">Other sheets are exported in full.</p>
       </div>
       <div class="modal-foot">
         <button class="btn" @click="cancelExport">Cancel</button>
-        <button class="btn btn-primary" :disabled="!exportFileName.trim()" @click="confirmExport">Export</button>
+        <button class="btn btn-primary" :disabled="!exportCanConfirm" @click="confirmExport">Export</button>
       </div>
     </div>
   </div>
@@ -3023,18 +3059,37 @@ createApp({
     function safeExportName(fileName) {
       return (fileName || defaultExportFileName()).trim().replace(/[\\/:*?"<>|]/g, '-').replace(/\.(xlsx|xls)$/i, '') || 'use-cases';
     }
+    // export options: rows and columns apply to the active sheet (filters belong to it)
+    const exportSheetScope = ref('all');  // 'all' | 'current'
+    const exportRowScope = ref('all');    // 'all' | 'filtered'
+    const exportColScope = ref('all');    // 'all' | 'pick'
+    const exportColIds = ref([]);
+    const exportCanConfirm = computed(() =>
+      (canPickSaveFile || !!exportFileName.value.trim()) &&
+      (exportColScope.value !== 'pick' || exportColIds.value.length > 0));
     function openExportDialog() {
-      // Browsers with the File System Access API show the system Save dialog, which asks for the name itself
-      if (canPickSaveFile) { exportExcel(defaultExportFileName()); return; }
       exportFileName.value = defaultExportFileName();
+      exportSheetScope.value = 'all';
+      // start from the filtered rows when a search or filter is narrowing the table
+      exportRowScope.value = filteredRows.value.length !== rows.length ? 'filtered' : 'all';
+      exportColScope.value = 'all';
+      exportColIds.value = columns.map(c => c.id);
       exportDialogOpen.value = true;
     }
     function cancelExport() { exportDialogOpen.value = false; }
     function confirmExport() {
-      const name = exportFileName.value.trim();
-      if (!name) return;
+      if (!exportCanConfirm.value) return;
+      // Browsers with the File System Access API show the system Save dialog, which asks for the name itself
+      const name = canPickSaveFile ? defaultExportFileName() : exportFileName.value.trim();
+      const picked = new Set(exportColIds.value);
+      const options = {
+        sheetScope: exportSheetScope.value,
+        rows: exportRowScope.value === 'filtered' ? [...filteredRows.value] : null,
+        // keep the table's column order
+        columns: exportColScope.value === 'pick' ? columns.filter(c => picked.has(c.id)) : null
+      };
       exportDialogOpen.value = false;
-      exportExcel(name);
+      exportExcel(name, options);
     }
     function buildWorksheet(cols, sheetRows) {
       const cellValue = (col, v) => {
@@ -3063,15 +3118,23 @@ createApp({
       });
       return ws;
     }
-    async function exportExcel(fileName) {
+    /* options (from the Export dialog), all optional:
+       sheetScope 'all' | 'current'; rows / columns replace the active sheet's
+       rows / columns (null = all of them) */
+    async function exportExcel(fileName, options = {}) {
       const wb = XLSX.utils.book_new();
       const used = [];
-      sheets.forEach(s => {
+      const exportSheets = options.sheetScope === 'current' ? sheets.filter(s => s.id === activeSheetId.value) : sheets;
+      exportSheets.forEach(s => {
         const c = sheetContent(s);
+        const isActive = s.id === activeSheetId.value;
+        const cols = (isActive && options.columns) || c.columns;
+        const sheetRows = (isActive && options.rows) || c.rows;
         const name = uniqueName(cleanSheetName(s.name) || 'Sheet', n => used.includes(n.toLowerCase()));
         used.push(name.toLowerCase());
-        XLSX.utils.book_append_sheet(wb, buildWorksheet(c.columns, c.rows), name);
+        XLSX.utils.book_append_sheet(wb, buildWorksheet(cols, sheetRows), name);
       });
+      const sheetCount = exportSheets.length;
       const suggestedName = `${safeExportName(fileName)}.xlsx`;
       if (canPickSaveFile) {
         let handle;
@@ -3093,12 +3156,12 @@ createApp({
             showToast('Could not save the file');
             return;
           }
-          showToast(sheets.length === 1 ? `Saved ${handle.name}` : `Saved ${handle.name} with ${sheets.length} sheets`);
+          showToast(sheetCount === 1 ? `Saved ${handle.name}` : `Saved ${handle.name} with ${sheetCount} sheets`);
           return;
         }
       }
       XLSX.writeFile(wb, suggestedName);
-      showToast(sheets.length === 1 ? 'Exported Excel file' : `Exported Excel file with ${sheets.length} sheets`);
+      showToast(sheetCount === 1 ? 'Exported Excel file' : `Exported Excel file with ${sheetCount} sheets`);
     }
 
     loadPersisted();
@@ -3109,6 +3172,7 @@ createApp({
       filteredRows, typeLabels, selectOptionsFor, formatColumnValue,
       importChoiceOpen, pendingImport, applyImport, cancelImport,
       exportDialogOpen, exportFileName, openExportDialog, cancelExport, confirmExport, exportExcel,
+      exportSheetScope, exportRowScope, exportColScope, exportColIds, exportCanConfirm, canPickSaveFile, activeSheet,
       addColumnOpen, newColumnName, newColumnType,
       openAddColumn, cancelAddColumn, confirmAddColumn, removeColumn,
       columnToRemove, cancelRemoveColumn, confirmRemoveColumn,
