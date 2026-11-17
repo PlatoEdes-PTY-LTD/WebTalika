@@ -152,8 +152,10 @@ Search for function names. Do not use line numbers. The line numbers change.
 ### 6.2 Column object
 
 ```
-{ id: string, name: string, type: string, width: number, prefix?: string, hidden?: true }
+{ id: string, name: string, type: string, width: number, prefix?: string, hidden?: true, globalId?: string, options?: string[] }
 ```
+
+`globalId` and `options` exist only on a column of type `select` that is linked to a global column (Section 9.12). `globalId` is the global column's ID. `options` is a copy of its values. Change type to another type deletes both keys.
 
 `prefix` exists only on a column of type `id`.
 
@@ -198,6 +200,7 @@ The labels in the UI come from the `typeLabels` object: Text, Date, Date & Time,
 | Key | Storage | Content |
 | --- | --- | --- |
 | `dynadoc-sheets-v1::<instance>` | localStorage | The whole document as JSON: `{ active, sheets: [{ name, columns, rows }] }`. `active` is the index of the shown sheet. Each row has only `values`. |
+| `webtalika-global-columns-v1::<instance>` | localStorage | The global columns as JSON: `[{ id, name, values }]`. Separate from the document, so an import does not change it. Reset All removes it. |
 | `use-case-tracker-columns-v2::<instance>` | localStorage | Pre-sheets columns. Read only when the sheets key is absent, as the first sheet. |
 | `use-case-tracker-rows-v2::<instance>` | localStorage | Pre-sheets rows. Read only when the sheets key is absent, as the first sheet. |
 | `use-case-tracker-filename-v2::<instance>` | localStorage | The name of the last imported file. |
@@ -270,7 +273,7 @@ The labels in the UI come from the `typeLabels` object: Text, Date, Date & Time,
 
 ### 9.1 Toolbar and icon-only buttons
 
-The toolbar has these items, from left to right: Add Entry, Add Column, Show/Hide Columns, Clear Filters, Search box, Add Tab Filter.
+The toolbar has these items, from left to right: Add Entry, Add Column, Global Columns (globe icon, teal count of global columns), Show/Hide Columns, Clear Filters, Search box, Add Tab Filter.
 
 The page header (`.page-head`) has the app name, tagline, and entry count on the left. On the right (`.head-actions`) it has "You are editing <file>" (`.current-file`, shown after an import), then Import Excel, Export Excel, Share live, Reset All, and New Window. Share live (people icon) gets the class `btn-live` in a session and shows a status dot and the number of people. Reset All is disabled for a guest. The header has no description line.
 
@@ -399,7 +402,7 @@ All dialogs use `.overlay` with `.modal`. A mouse-down on the overlay closes the
 ### 9.6a Column menu
 
 - Each header cell has a `.col-menu-btn` (▾) after the name, in place of the old filter, change-type, rename and remove icons. It is amber (`.active`) when the column has a filter.
-- The menu `.col-menu` is teleported to `body` (the table scroller would clip it) and positioned under the button with `position: fixed`, kept on screen, and opened upwards when there is no room below. Items: **Filter…** (opens the filter popover under the button, `openFilterPopoverAt`), **Change type** (shows the current type), **Rename**, and **Remove column**. Locked Index columns show only Filter… and a note.
+- The menu `.col-menu` is teleported to `body` (the table scroller would clip it) and positioned under the button with `position: fixed`, kept on screen, and opened upwards when there is no room below. Items: **Filter…** (opens the filter popover under the button, `openFilterPopoverAt`), **Change type** (shows the current type), **Rename**, **Make global column…** (only on `select` columns; note "linked" when the column is already linked), and **Remove column**. Locked Index columns show only Filter… and a note.
 - **Hover.** `pointerenter` on the button with `pointerType === 'mouse'` opens it (`onColMenuHover`). Leaving the button or the menu starts a 250ms close timer (`onColMenuLeave`); entering the menu clears it (`keepColMenu`).
 - **Click or tap** toggles it (`clickColMenu`). A click on a menu opened by hover keeps it open. Touch never opens on hover, so a tap opens and a second tap closes.
 - It closes on an outside `mousedown`, on any scroll outside it (the button moves with the table), and after an item is chosen (`colMenuAction`). The filter popover's outside-click check ignores clicks in the menu and on the button.
@@ -466,6 +469,18 @@ All dialogs use `.overlay` with `.modal`. A mouse-down on the overlay closes the
 - Tab filters are part of a sheet's view state: `stashActiveSheet` copies them into `sheet.view.tabFilters`, and `activateSheet` restores them. They are not saved in `localStorage`.
 
 ---
+
+### 9.12 Global columns
+
+**Purpose.** A global column is a reusable Set definition: a name and an ordered list of values. The user inserts it into any sheet as a Set column.
+
+- **State.** `globalColumns` (reactive array of `{ id, name, values }`). IDs start with `g_`. `loadGlobalColumns()` reads key `webtalika-global-columns-v1::<instance>` at startup, before `loadPersisted()`. `persistGlobalColumns()` writes it. `persist()` does not write it.
+- **Dialog.** The toolbar button (`openGlobalColumns`) opens the Global Columns modal (`globalColsOpen`). It has a list view and an edit view (`globalEdit` is `{ id, name, valuesText, linkColId }` or null). Values are typed one per line. `cleanSetValues` trims them and removes blanks and repeats. Names must be unique (case-insensitive). Delete asks for confirmation inside the list row (`globalToDelete`).
+- **From a column.** The column menu item **Make global column…** (`makeGlobalFromColumn`) opens the edit view with the column's name and `selectOptionsFor(col.id)`. `linkColId` is set, so save links that column to the new global column.
+- **Insert.** Add Column shows **Start from** when global columns exist (`newColumnSource`). A global column sets the type to Set and fills the name. `confirmAddColumn` writes `globalId` and `options` (a copy of the values) on the new column.
+- **One-way link.** `selectOptionsFor` uses `definedValuesFor(col)`: the global column's current values while it exists, else `col.options`. Then it adds the other values in the column, sorted. Values typed in a sheet never change a global column. Saving a global column copies its values into `options` of every linked column on every sheet (`linkedColumnsOf`), so the copy is current if the global column is deleted later. Delete removes `globalId` from the linked columns; they keep `options`.
+- **Header mark.** A linked column shows a teal globe (`.col-global-mark`) after its name (`isGlobalLinked`).
+- **Life cycle.** Import does not change global columns. Reset All clears them and removes the key; Reset All is enabled while global columns exist, even in a blank workbook. Excel export does not write them, and `globalId`/`options` are not written to Excel. Live sharing sends the columns with `globalId` and `options`, but not the global columns. A guest or host without the same global column uses `options`.
 
 ### 9.11 Live sharing (PeerJS)
 
@@ -718,6 +733,7 @@ No automated test suite exists. Each session writes short Playwright scripts. Ch
 | 45 | Column menu: the filter, change-type, rename and remove icons in each header are replaced by one ▾ button that opens a menu on hover (mouse) or tap (touch). |
 | 46 | The app file is renamed from `talika.html` to `webtalika.html`. `index.html` and the docs link to the new name. `talika.html` is now a redirect page to `webtalika.html`. |
 | 47 | Live sharing with PeerJS. Share live button in the header. The host enters a name and gets a `#join=` link. Each guest enters a name. Changes go as whole-document snapshots through the host; the later change wins. Rows get a `_uid`, so dialogs, selection, tabs, filters, and scroll survive a remote update. Guests do not write to storage, and leaving restores their data. The host resumes after a reload. `index.html` lists the feature as tool 13. |
+| 48 | Global columns: reusable Set columns (name + values) in a Global Columns dialog (globe button in the toolbar), stored per instance under `webtalika-global-columns-v1`. Insert from **Start from** in Add Column; the column keeps a one-way link (`globalId`) and a copy (`options`). **Make global column…** in the column menu creates one from a Set column. Kept on import, cleared by Reset All, not exported. |
 
 ---
 

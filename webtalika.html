@@ -101,6 +101,7 @@
   .btn-round.has-filters{background:var(--amber);border-color:var(--amber);color:#fff;}
   .btn-round.has-filters:hover{filter:brightness(.92);}
   .btn-round.has-filters .btn-count{color:var(--amber);border-color:var(--amber);}
+  .btn-round.has-globals .btn-count{color:var(--teal);border-color:var(--teal);}
   .col-vis-list{display:flex;flex-direction:column;gap:6px;}
   .field label.export-opt{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:0;margin:0 0 6px;cursor:pointer;}
   .export-scope-note{text-transform:none;letter-spacing:0;font-weight:500;}
@@ -220,6 +221,10 @@
   .col-menu button.danger svg{color:inherit;}
   .col-menu-note{margin-left:auto;padding-left:12px;font-size:11px;color:var(--ink-soft);}
   .col-menu-sep{height:1px;background:var(--line-soft);margin:4px 6px;}
+  .col-global-mark{display:inline-flex;align-items:center;color:var(--teal);flex-shrink:0;margin-left:-2px;}
+  .global-chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .global-item{gap:6px;cursor:default;}
+  .global-item-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
   .col-menu-locked{margin:4px 10px 6px;font-size:11.5px;color:var(--ink-soft);max-width:200px;}
   .col-sort-btn,.col-filter-btn{
     flex-shrink:0;border:none;background:transparent;color:var(--ink-soft);cursor:pointer;
@@ -454,7 +459,7 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         <span v-if="collab.role" class="live-label"><span class="live-dot" :class="collab.status"></span>{{ collab.status === 'live' ? collab.peers.length : '…' }}</span>
       </button>
-      <button class="btn btn-danger-text" :disabled="isBlankWorkbook || collab.role === 'guest'" @click="resetAllOpen = true" :title="collab.role === 'guest' ? 'Reset All is off while you are a guest in a live session' : 'Reset All: delete all sheets, rows and columns'" aria-label="Reset All">
+      <button class="btn btn-danger-text" :disabled="(isBlankWorkbook && !globalColumns.length) || collab.role === 'guest'" @click="resetAllOpen = true" :title="collab.role === 'guest' ? 'Reset All is off while you are a guest in a live session' : 'Reset All: delete all sheets, rows and columns'" aria-label="Reset All">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
       </button>
       <button class="btn" @click="openNewInstance" title="New Window: open an independent copy of WebTalika in a new tab. It does not share data with this one." aria-label="New Window">
@@ -470,6 +475,11 @@
     </button>
     <button class="btn" @click="openAddColumn" aria-label="Add Column" title="Add Column">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="13" height="16" rx="2"/><line x1="9.5" y1="4" x2="9.5" y2="20"/><line x1="19.5" y1="9" x2="19.5" y2="15"/><line x1="16.5" y1="12" x2="22.5" y2="12"/></svg>
+    </button>
+    <button class="btn btn-round" :class="{ 'has-globals': globalColumns.length }" @click="openGlobalColumns" aria-label="Global Columns"
+      :title="globalColumns.length ? `Global Columns: ${globalColumns.length} reusable Set ${globalColumns.length === 1 ? 'column' : 'columns'}` : 'Global Columns: define reusable Set columns and their values'">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 010 18a14 14 0 010-18z"/></svg>
+      <span class="btn-count" v-if="globalColumns.length">{{ globalColumns.length }}</span>
     </button>
     <button class="btn btn-round" :class="{ 'has-hidden': hiddenColumnCount }" :disabled="!columns.length" @click="columnVisOpen = true"
       :title="hiddenColumnCount ? `Show/Hide Columns: ${hiddenColumnCount} hidden` : 'Show/Hide Columns'" aria-label="Show/Hide Columns">
@@ -603,6 +613,9 @@
                 @blur="commitRename(col)" @keydown.enter.prevent="commitRename(col)" @keydown.esc="cancelRename"
                 @click.stop @mousedown.stop ref="renameInputs">
               <span v-else class="col-name" :title="typeLabels[col.type] + (col.locked ? ' — Index column: can\'t be renamed, retyped or removed' : ' — double-click to rename, drag to reorder')" @dblclick="startRename(col)">{{ col.name }}</span>
+              <span v-if="renamingColId !== col.id && isGlobalLinked(col)" class="col-global-mark" :title="'Values come from global column &quot;' + globalColumnById(col.globalId).name + '&quot;'" aria-label="Linked to a global column">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 010 18a14 14 0 010-18z"/></svg>
+              </span>
               <button type="button" class="col-menu-btn" draggable="false" v-if="renamingColId !== col.id"
                 :class="{ active: hasActiveFilter(col.id), open: colMenu && colMenu.col.id === col.id }"
                 @pointerenter="onColMenuHover($event, col)" @pointerleave="onColMenuLeave"
@@ -722,6 +735,10 @@
         </button>
         <button type="button" role="menuitem" @click="colMenuAction('rename')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span>Rename</span>
+        </button>
+        <button type="button" role="menuitem" v-if="colMenu.col.type === 'select'" @click="colMenuAction('global')"
+          :title="isGlobalLinked(colMenu.col) ? 'This column already takes its values from a global column; this creates another one from its current values' : 'Save this column\'s values as a reusable global column'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 010 18a14 14 0 010-18z"/></svg><span>Make global column…</span><span class="col-menu-note" v-if="isGlobalLinked(colMenu.col)">linked</span>
         </button>
         <div class="col-menu-sep"></div>
         <button type="button" role="menuitem" class="danger" @click="colMenuAction('remove')">
@@ -913,11 +930,27 @@
         <h2>Add Column</h2>
       </div>
       <div class="modal-body">
+        <div class="field" v-if="globalColumns.length">
+          <label>Start from</label>
+          <select v-model="newColumnSource">
+            <option value="">New column</option>
+            <optgroup label="Global columns (Set)">
+              <option v-for="g in globalColumns" :key="g.id" :value="g.id">{{ g.name }} ({{ g.values.length }} {{ g.values.length === 1 ? 'value' : 'values' }})</option>
+            </optgroup>
+          </select>
+        </div>
         <div class="field">
           <label>Column Name</label>
           <input type="text" v-model="newColumnName" placeholder="e.g. Owner" @keydown.enter.prevent="confirmAddColumn">
         </div>
-        <div class="field" style="margin-bottom:0;">
+        <div class="field" style="margin-bottom:0;" v-if="newColumnGlobal">
+          <label>Values</label>
+          <div class="global-chips">
+            <span class="badge" v-for="v in newColumnGlobal.values" :key="v">{{ v }}</span>
+          </div>
+          <div class="hint">A Set column linked to global column <strong>{{ newColumnGlobal.name }}</strong>. Values added to the global column later show up here as well; changes made in this sheet stay in this sheet.</div>
+        </div>
+        <div class="field" style="margin-bottom:0;" v-else>
           <label>Type</label>
           <select v-model="newColumnType">
             <option value="text">Text</option>
@@ -930,7 +963,7 @@
             <option value="id">ID (prefix + auto number)</option>
           </select>
         </div>
-        <div class="field" style="margin:14px 0 0;" v-if="newColumnType === 'id'">
+        <div class="field" style="margin:14px 0 0;" v-if="newColumnType === 'id' && !newColumnGlobal">
           <label>ID prefix</label>
           <input type="text" v-model="newColumnPrefix" placeholder="e.g. UC" @keydown.enter.prevent="confirmAddColumn">
           <div class="hint">Values look like <strong>{{ (newColumnPrefix || 'UC').trim().replace(/\s+/g, '').replace(/-+$/, '') || 'UC' }}-1</strong>, then -2, -3 and so on. New entries get the next number automatically.</div>
@@ -1111,6 +1144,73 @@
   </div>
 
   <!-- Reset all confirm modal -->
+  <!-- Global columns modal: reusable Set columns -->
+  <div class="overlay" v-if="globalColsOpen" @mousedown.self="closeGlobalColumns">
+    <div class="modal modal-small">
+      <div class="modal-head">
+        <h2>{{ globalEdit ? (globalEdit.id ? 'Edit Global Column' : 'New Global Column') : 'Global Columns' }}</h2>
+        <button class="icon-btn" @click="closeGlobalColumns" aria-label="Close">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <template v-if="globalEdit">
+        <div class="modal-body">
+          <div class="field">
+            <label>Name</label>
+            <input type="text" v-model="globalEdit.name" placeholder="e.g. Status">
+            <div class="hint" v-if="globalEditNameTaken" style="color:var(--danger);">A global column with this name already exists.</div>
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label>Values (one per line)</label>
+            <textarea v-model="globalEdit.valuesText" placeholder="Open&#10;In Progress&#10;Done" style="min-height:150px;"></textarea>
+            <div class="hint">
+              {{ globalEditValues.length }} {{ globalEditValues.length === 1 ? 'value' : 'values' }}, offered in this order. Blank lines and repeats are ignored.
+              <template v-if="globalEdit.linkColId"> This column will be linked to the new global column.</template>
+              <template v-else-if="globalEdit.id && globalLinkCount(globalEdit.id)"> Changes reach the {{ globalLinkCount(globalEdit.id) }} linked sheet {{ globalLinkCount(globalEdit.id) === 1 ? 'column' : 'columns' }}; values already in cells are not changed.</template>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="cancelGlobalEdit">{{ globalEdit.linkColId ? 'Cancel' : 'Back' }}</button>
+          <button class="btn btn-primary" :disabled="globalEditInvalid" @click="saveGlobalEdit">{{ globalEdit.id ? 'Save' : 'Create' }}</button>
+        </div>
+      </template>
+      <template v-else>
+        <div class="modal-body">
+          <p class="hint" style="margin:0 0 12px;">Reusable Set columns with their own list of values. Insert one into any sheet from <strong>Add Column</strong>; values you add here later show up in those sheet columns. They stay when you import a file and are removed by Reset All. They are not exported to Excel.</p>
+          <div class="col-vis-list" v-if="globalColumns.length">
+            <div class="col-vis-item global-item" v-for="g in globalColumns" :key="g.id">
+              <div class="global-item-main">
+                <span class="col-vis-name">{{ g.name }}</span>
+                <span class="hint" style="margin:0;">{{ g.values.length }} {{ g.values.length === 1 ? 'value' : 'values' }}<template v-if="globalLinkCount(g.id)"> · used by {{ globalLinkCount(g.id) }} sheet {{ globalLinkCount(g.id) === 1 ? 'column' : 'columns' }}</template></span>
+              </div>
+              <template v-if="globalToDelete && globalToDelete.id === g.id">
+                <button type="button" class="btn" @click="globalToDelete = null">Keep</button>
+                <button type="button" class="btn" style="background:var(--danger);border-color:var(--danger);color:#fff" @click="deleteGlobalColumn(g)">Delete</button>
+              </template>
+              <template v-else>
+                <button type="button" class="icon-btn" @click="startGlobalEdit(g)" :title="'Edit ' + g.name" :aria-label="'Edit ' + g.name">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button type="button" class="icon-btn" @click="globalToDelete = g" :title="'Delete ' + g.name" :aria-label="'Delete ' + g.name">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+                </button>
+              </template>
+            </div>
+          </div>
+          <p class="hint" v-if="globalToDelete && globalLinkCount(globalToDelete.id)" style="margin:10px 0 0;">
+            {{ globalLinkCount(globalToDelete.id) }} sheet {{ globalLinkCount(globalToDelete.id) === 1 ? 'column keeps' : 'columns keep' }} the values {{ globalLinkCount(globalToDelete.id) === 1 ? 'it' : 'they' }} already have, but no longer {{ globalLinkCount(globalToDelete.id) === 1 ? 'gets' : 'get' }} new ones.
+          </p>
+          <p class="hint" v-if="!globalColumns.length" style="margin:0;">No global columns yet. You can also turn an existing Set column into one from its column menu (<strong>Make global column…</strong>).</p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="startGlobalEdit(null)">New Global Column</button>
+          <button class="btn btn-primary" @click="closeGlobalColumns">Done</button>
+        </div>
+      </template>
+    </div>
+  </div>
+
   <div class="overlay" v-if="resetAllOpen" @mousedown.self="resetAllOpen=false">
     <div class="modal modal-small">
       <div class="modal-head">
@@ -1120,6 +1220,9 @@
         <p style="margin:0 0 4px;">
           This will permanently delete all <strong>{{ sheets.length }}</strong> {{ sheets.length === 1 ? 'sheet' : 'sheets' }}
           and every entry and column in them (<strong>{{ totalRowCount }}</strong> {{ totalRowCount === 1 ? 'entry' : 'entries' }}) — leaving the Index and a single blank sheet.
+        </p>
+        <p style="margin:0 0 4px;" v-if="globalColumns.length">
+          It also deletes all <strong>{{ globalColumns.length }}</strong> global {{ globalColumns.length === 1 ? 'column' : 'columns' }}.
         </p>
         <p style="margin:0;color:var(--ink-soft);font-size:12.5px;">This can't be undone.</p>
       </div>
@@ -1344,6 +1447,10 @@ const COLUMNS_KEY = 'use-case-tracker-columns-v2::' + INSTANCE_ID;
    Data saved under STORAGE_KEY / COLUMNS_KEY before sheets existed is
    loaded as the first sheet. */
 const SHEETS_KEY = 'dynadoc-sheets-v1::' + INSTANCE_ID;
+/* global columns: [{ id, name, values: [...] }] — reusable Set definitions.
+   Kept apart from the sheets so importing a file leaves them alone; only
+   Reset All deletes them. Never exported to Excel or sent in live sharing. */
+const GLOBAL_COLS_KEY = 'webtalika-global-columns-v1::' + INSTANCE_ID;
 
 /* one-time migration: give the first instance to ever load access to data
    saved before multi-instance support existed, without duplicating it into
@@ -1737,6 +1844,7 @@ createApp({
     const newColumnName = ref('');
     const newColumnPrefix = ref('');
     const newColumnType = ref('text');
+    const newColumnSource = ref(''); // a global column id, or '' for a new column
     const columnToRemove = ref(null);
     const resetAllOpen = ref(false);
     const renamingColId = ref(null);
@@ -1902,10 +2010,124 @@ createApp({
       } catch (e) { /* storage unavailable — ignore */ }
     }
 
+    /* a Set column's choices: its defined values first (live from its global
+       column while that exists, else the column's own copy), then any other
+       values typed into the column, sorted */
     function selectOptionsFor(colId) {
-      const set = new Set();
-      rows.forEach(r => { const v = r.values[colId]; if (v) set.add(v); });
-      return Array.from(set).sort();
+      const col = columns.find(c => c.id === colId);
+      const base = col ? definedValuesFor(col) : [];
+      const known = new Set(base);
+      const extra = new Set();
+      rows.forEach(r => { const v = r.values[colId]; if (v && !known.has(v)) extra.add(v); });
+      return base.concat(Array.from(extra).sort());
+    }
+
+    /* ---- global columns ----
+       Reusable Set definitions (name + values). A sheet column inserted from
+       one keeps `globalId` and a copy of the values in `options`; values come
+       one way only, from the global column to the sheet column. */
+    const globalColumns = reactive([]);
+    const globalColsOpen = ref(false);
+    const globalEdit = ref(null); // { id|null, name, valuesText, linkColId|null }
+    function loadGlobalColumns() {
+      let list = [];
+      try { list = JSON.parse(localStorage.getItem(GLOBAL_COLS_KEY) || '[]'); } catch (e) { /* ignore corrupt storage */ }
+      if (!Array.isArray(list)) list = [];
+      globalColumns.splice(0, globalColumns.length, ...list
+        .filter(g => g && g.id && typeof g.name === 'string')
+        .map(g => ({ id: g.id, name: g.name, values: cleanSetValues(Array.isArray(g.values) ? g.values : []) })));
+    }
+    function persistGlobalColumns() {
+      try { localStorage.setItem(GLOBAL_COLS_KEY, JSON.stringify(globalColumns)); } catch (e) { /* storage unavailable — ignore */ }
+    }
+    function cleanSetValues(list) {
+      const seen = new Set(), out = [];
+      list.forEach(v => { const t = String(v == null ? '' : v).trim(); if (t && !seen.has(t)) { seen.add(t); out.push(t); } });
+      return out;
+    }
+    function globalColumnById(id) { return id ? globalColumns.find(g => g.id === id) || null : null; }
+    function definedValuesFor(col) {
+      if (!col || col.type !== 'select') return [];
+      const g = globalColumnById(col.globalId);
+      return g ? g.values.slice() : (Array.isArray(col.options) ? col.options.slice() : []);
+    }
+    function isGlobalLinked(col) { return !!(col && col.type === 'select' && globalColumnById(col.globalId)); }
+    /* every sheet column (on any sheet) linked to global column `id` */
+    function linkedColumnsOf(id) {
+      const out = [];
+      sheets.forEach(s => { if (!s.isIndex) sheetContent(s).columns.forEach(c => { if (c.type === 'select' && c.globalId === id) out.push(c); }); });
+      return out;
+    }
+    function globalLinkCount(id) { return linkedColumnsOf(id).length; }
+    function openGlobalColumns() {
+      globalEdit.value = null;
+      globalColsOpen.value = true;
+    }
+    function closeGlobalColumns() {
+      globalColsOpen.value = false;
+      globalEdit.value = null;
+    }
+    function startGlobalEdit(g) {
+      globalEdit.value = g
+        ? { id: g.id, name: g.name, valuesText: g.values.join('\n'), linkColId: null }
+        : { id: null, name: '', valuesText: '', linkColId: null };
+    }
+    function cancelGlobalEdit() {
+      // opened straight from a column menu: close the dialog rather than show the list
+      if (globalEdit.value && globalEdit.value.linkColId) closeGlobalColumns();
+      else globalEdit.value = null;
+    }
+    const globalEditValues = computed(() => globalEdit.value ? cleanSetValues(globalEdit.value.valuesText.split('\n')) : []);
+    const globalEditNameTaken = computed(() => {
+      const e = globalEdit.value;
+      if (!e) return false;
+      const n = e.name.trim().toLowerCase();
+      return !!n && globalColumns.some(g => g.id !== e.id && g.name.trim().toLowerCase() === n);
+    });
+    const globalEditInvalid = computed(() => !globalEdit.value || !globalEdit.value.name.trim() || !globalEditValues.value.length || globalEditNameTaken.value);
+    function saveGlobalEdit() {
+      const e = globalEdit.value;
+      if (!e || globalEditInvalid.value) return;
+      const name = e.name.trim(), values = globalEditValues.value;
+      let g = globalColumnById(e.id);
+      if (g) { g.name = name; g.values = values; }
+      else {
+        g = { id: 'g_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4), name, values };
+        globalColumns.push(g);
+      }
+      if (e.linkColId) {
+        const col = columns.find(c => c.id === e.linkColId);
+        if (col && col.type === 'select') col.globalId = g.id;
+      }
+      // refresh each linked column's copy, so it still has the latest values if the global column goes away
+      linkedColumnsOf(g.id).forEach(c => { c.options = values.slice(); });
+      persistGlobalColumns();
+      persist();
+      showToast(e.id ? `Saved global column "${name}"` : (e.linkColId ? `Created global column "${name}" and linked this column to it` : `Created global column "${name}"`));
+      if (e.linkColId) closeGlobalColumns(); else globalEdit.value = null;
+    }
+    const globalToDelete = ref(null);
+    function deleteGlobalColumn(g) {
+      const i = globalColumns.findIndex(x => x.id === g.id);
+      if (i < 0) return;
+      globalColumns.splice(i, 1);
+      // linked columns keep working from their copy of the values; drop the dead link
+      linkedColumnsOf(g.id).forEach(c => { delete c.globalId; });
+      persistGlobalColumns();
+      persist();
+      globalToDelete.value = null;
+      showToast(`Deleted global column "${g.name}"`);
+    }
+    /* column menu: turn a Set column into a new global column, prefilled with its values */
+    function makeGlobalFromColumn(col) {
+      if (!col || col.type !== 'select') return;
+      globalEdit.value = {
+        id: null,
+        name: globalColumns.some(g => g.name.trim().toLowerCase() === col.name.trim().toLowerCase()) ? '' : col.name,
+        valuesText: selectOptionsFor(col.id).join('\n'),
+        linkColId: col.id
+      };
+      globalColsOpen.value = true;
     }
 
     function cellText(col, row) {
@@ -2270,6 +2492,7 @@ createApp({
       else if (action === 'type') openChangeType(m.col);
       else if (action === 'rename') startRename(m.col);
       else if (action === 'remove') removeColumn(m.col);
+      else if (action === 'global') makeGlobalFromColumn(m.col);
     }
     window.addEventListener('mousedown', e => {
       if (colMenu.value && !(e.target.closest && (e.target.closest('.col-menu') || e.target.closest('.col-menu-btn')))) colMenu.value = null;
@@ -2502,8 +2725,20 @@ createApp({
       newColumnName.value = '';
       newColumnType.value = 'text';
       newColumnPrefix.value = '';
+      newColumnSource.value = '';
       addColumnOpen.value = true;
     }
+    /* Add Column: picking a global column fills in the name and makes it a Set */
+    const newColumnGlobal = computed(() => globalColumnById(newColumnSource.value));
+    watch(newColumnSource, (id, oldId) => {
+      const g = globalColumnById(id), prev = globalColumnById(oldId);
+      if (g) {
+        newColumnType.value = 'select';
+        if (!newColumnName.value.trim() || (prev && newColumnName.value.trim() === prev.name)) newColumnName.value = g.name;
+      } else if (prev && newColumnName.value.trim() === prev.name) {
+        newColumnName.value = '';
+      }
+    });
     function cancelAddColumn() { addColumnOpen.value = false; }
     function confirmAddColumn() {
       const name = newColumnName.value.trim();
@@ -2514,7 +2749,10 @@ createApp({
       const type = newColumnType.value;
       const prefix = cleanPrefix(newColumnPrefix.value);
       if (type === 'id' && !prefix) return;
-      columns.push(type === 'id' ? { id, name, type, prefix, width: 200 } : { id, name, type, width: 200 });
+      const g = type === 'select' ? newColumnGlobal.value : null;
+      columns.push(type === 'id' ? { id, name, type, prefix, width: 200 }
+        : g ? { id, name, type, globalId: g.id, options: g.values.slice(), width: 200 }
+        : { id, name, type, width: 200 });
       rows.forEach(r => { r.values[id] = emptyValueFor(type); });
       persist();
       addColumnOpen.value = false;
@@ -2559,6 +2797,7 @@ createApp({
       rows.forEach(r => { r.values[col.id] = convertValue(fromType, toType, r.values[col.id], opts); });
       col.type = toType;
       if (toType === 'id') col.prefix = opts.prefix; else delete col.prefix;
+      if (toType !== 'select') { delete col.globalId; delete col.options; } // only Set columns link to a global column
       // keep only the display formats that fit the new type
       if (toType !== 'date' && toType !== 'datetime') delete col.dateFormat;
       if (toType !== 'datetime') delete col.timeFormat;
@@ -2845,7 +3084,9 @@ createApp({
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(FILE_NAME_KEY);
         localStorage.removeItem(COLUMNS_KEY);
+        localStorage.removeItem(GLOBAL_COLS_KEY);
       } catch (e) { /* storage unavailable — ignore */ }
+      globalColumns.splice(0, globalColumns.length);
       resetAllOpen.value = false;
       showToast('Everything has been reset to a blank table');
     }
@@ -3576,6 +3817,7 @@ createApp({
     }
     window.addEventListener('hashchange', checkJoinLink);
 
+    loadGlobalColumns();
     loadPersisted();
 
     if (/^#join=/.test(location.hash)) {
@@ -3612,6 +3854,9 @@ createApp({
       tabFilters, tabFilterTests, tabFilterSources, tabFilterOpLabels, tabFilterOpsFor, tabFilterColType,
       tabFilterSourceValue, setTabFilterSource, tabFilterValueOptions, fixTabFilterOp, addTabFilter, removeTabFilter, clearTabFilters,
       openNewInstance,
+      globalColumns, globalColsOpen, globalEdit, globalEditValues, globalEditNameTaken, globalEditInvalid, globalToDelete,
+      openGlobalColumns, closeGlobalColumns, startGlobalEdit, cancelGlobalEdit, saveGlobalEdit, deleteGlobalColumn,
+      globalColumnById, globalLinkCount, isGlobalLinked, newColumnSource, newColumnGlobal,
       resetAllOpen, resetAll,
       showHiddenInDialog, dialogColumns, openAdd, openEdit, closeDialog, saveEntry, saveAndClose, editingPosition, hasNextRecord, canSaveAndNext, editNext, confirmDelete, confirmDeleteSelected, doDelete,
       handleImport, startResize,
