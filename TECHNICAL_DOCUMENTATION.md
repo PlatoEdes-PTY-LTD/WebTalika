@@ -201,6 +201,7 @@ The labels in the UI come from the `typeLabels` object: Text, Date, Date & Time,
 | --- | --- | --- |
 | `dynadoc-sheets-v1::<instance>` | localStorage | The whole document as JSON: `{ active, sheets: [{ name, columns, rows }] }`. `active` is the index of the shown sheet. Each row has only `values`. |
 | `webtalika-global-columns-v1::<instance>` | localStorage | The global columns as JSON: `[{ id, name, values }]`. Separate from the document, so an import does not change it. Reset All removes it. |
+| `webtalika-agent-auto-v1::<instance>` | localStorage | `'1'` when the user lets AI agents change data without asking (Section 9.13). Reset All sets it to `'0'`. |
 | `use-case-tracker-columns-v2::<instance>` | localStorage | Pre-sheets columns. Read only when the sheets key is absent, as the first sheet. |
 | `use-case-tracker-rows-v2::<instance>` | localStorage | Pre-sheets rows. Read only when the sheets key is absent, as the first sheet. |
 | `use-case-tracker-filename-v2::<instance>` | localStorage | The name of the last imported file. |
@@ -482,6 +483,36 @@ All dialogs use `.overlay` with `.modal`. A mouse-down on the overlay closes the
 - **Header mark.** A linked column shows a teal globe (`.col-global-mark`) after its name (`isGlobalLinked`).
 - **Life cycle.** Import does not change global columns. Reset All clears them and removes the key; Reset All is enabled while global columns exist, even in a blank workbook. Excel export does not write them, and `globalId`/`options` are not written to Excel. Live sharing sends the columns with `globalId` and `options`, but not the global columns. A guest or host without the same global column uses `options`.
 
+### 9.13 Agent API (`window.WebTalika`, WebMCP)
+
+**Purpose.** AI agents in the browser read and change the document through tools. The public reference is `API.md`. Update it when you change a tool.
+
+- **Registry.** `AGENT_TOOLS` (near the end of setup) is the only list of tools. Each tool has `name`, `description`, `inputSchema` (JSON Schema), and either:
+  - `readOnly: true` with `run(args)`, or
+  - `plan(args)`, which returns `{ summary, details, danger?, preview?, apply() }`.
+
+  `view: true` with `run(args)` marks a tool that changes only the view: `showSheet`, `setSearch`, `setFilter`, `setSort`, `clearFilters`. These need no permission and are not logged. In WebMCP they set neither `readOnlyHint` nor `consequentialHint`.
+
+  `untrusted: true` marks tools that return user data.
+- **View tools.** They first show the sheet (`apiShow`), then set the same state as the UI: `search`, `columnFilters[col.id]` (the shape comes from `apiFilterFor`, see `emptyFilterFor`), `sortColId`/`sortDir`, `clearTabFilters()`.
+  - A plain-date `from`/`to` on a Date & Time column becomes `T00:00`/`T23:59`.
+  - Hidden columns are refused, which matches `setColumnHidden`.
+  - `apiViewInfo()` (`getView`) reports the state. `queryRows { onScreen }` starts from `filteredRows` (shown sheet only).
+- **Running.** `runAgentTool` runs every call and never throws. The result is `{ ok, data }` or `{ ok: false, error: { code, message } }`.
+  - For a change, it calls `plan` (which checks the arguments and throws `AgentError`), then asks for permission, then calls `plan` again and runs `apply`. The second `plan` is there because the document can change while the dialog is open.
+  - Results go through `plain()` (JSON copy), so no Vue proxy leaves the app.
+- **Permission.** `askAgentPermission` resolves at once with `'auto'` when `agent.auto` is true. Otherwise it adds a request to `agent.queue`.
+  - The dialog `.overlay-agent` (z-index 300, above every other modal) shows `agentAsk` (the first request in the queue).
+  - `answerAgent('allow' | 'deny' | 'auto')`. `'auto'` also allows every other waiting request.
+  - A WebMCP abort signal removes a waiting request (`ABORTED`).
+  - `agent.log` keeps the last 50 changes, in memory only. The header button `.btn-agent` shows after the first call, or while auto is on. It opens the AI Agent panel (`agent.panelOpen`).
+- **Visible changes.** `apply` calls `apiShow(sheet)` first, so the user sees the sheet that changes. It reuses the app functions where it can: `insertColumn`, `confirmChangeType`, `confirmRemoveColumn`, `setColumnHidden`, `deleteSheet`, `upsertGlobalColumn`, `deleteGlobalColumn`. So filters, sort, the Index, persistence, and live sharing stay correct.
+- **Values.** `apiValueIn` converts and checks an agent's value for a column type: dates `YYYY-MM-DD`, date-times `YYYY-MM-DDTHH:mm`, numbers, links and lists from strings or objects, IDs `PREFIX-n`. A bad value fails with `INVALID_VALUE` before the user is asked.
+- **Row ids.** Rows have a stable `_uid` (`rowUid`). `persist()` and `collabSnapshot()` save it as `u`, and `makeSheet` reads `u` back. Row ids therefore survive a reload, and live sharing uses the same ids. A duplicated sheet and imported rows get new ids.
+- **WebMCP.** `registerWebMcp()` uses `document.modelContext.registerTool(tool, { signal })` (the spec). Otherwise it uses `navigator.modelContext.registerTool(tool)` (early Chrome), and wraps results as `{ content: [{ type: 'text', text }] }`. Annotations are `readOnlyHint`, `consequentialHint`, and `untrustedContentHint`. `webMcpStatus` is reported by `describe()`.
+- **Discovery.** A `<meta name="webtalika-api">` tag and an HTML comment in `<head>` point agents to `WebTalika.describe()`.
+- **Limits.** At most 500 rows for each `addRows`, `updateRows`, or `queryRows` call (`AGENT_MAX_ROWS`). Reset All is not a tool. Reset All also turns auto off and clears the log.
+
 ### 9.11 Live sharing (PeerJS)
 
 **Purpose.** Several people edit one document at the same time. One person hosts. The others join from a link. Each person gives a name.
@@ -734,6 +765,8 @@ No automated test suite exists. Each session writes short Playwright scripts. Ch
 | 46 | The app file is renamed from `talika.html` to `webtalika.html`. `index.html` and the docs link to the new name. `talika.html` is now a redirect page to `webtalika.html`. |
 | 47 | Live sharing with PeerJS. Share live button in the header. The host enters a name and gets a `#join=` link. Each guest enters a name. Changes go as whole-document snapshots through the host; the later change wins. Rows get a `_uid`, so dialogs, selection, tabs, filters, and scroll survive a remote update. Guests do not write to storage, and leaving restores their data. The host resumes after a reload. `index.html` lists the feature as tool 13. |
 | 48 | Global columns: reusable Set columns (name + values) in a Global Columns dialog (globe button in the toolbar), stored per instance under `webtalika-global-columns-v1`. Insert from **Start from** in Add Column; the column keeps a one-way link (`globalId`) and a copy (`options`). **Make global column…** in the column menu creates one from a Set column. Kept on import, cleared by Reset All, not exported. |
+| 49 | Agent API: `window.WebTalika` with 25 tools (read, sheets, columns, rows, global columns) and the same tools registered as WebMCP tools. Every change asks the user (Allow, Deny, Allow automatically); AI button in the header with the auto setting and recent activity. Rows get stable ids saved as `u`. Reference in `API.md`. |
+| 50 | Agent view tools: `getView`, `setSearch`, `setFilter`, `setSort`, `clearFilters` (no permission: they change only what is shown). `queryRows { onScreen: true }` reads the rows on screen. `describe()` gives each tool a `kind` (read, view, change). |
 
 ---
 
