@@ -996,7 +996,7 @@
         <div class="field" style="margin:14px 0 0;" v-if="newColumnType === 'id' && !newColumnGlobal">
           <label>ID prefix</label>
           <input type="text" v-model="newColumnPrefix" placeholder="e.g. UC" @keydown.enter.prevent="confirmAddColumn">
-          <div class="hint">Values look like <strong>{{ (newColumnPrefix || 'UC').trim().replace(/\s+/g, '').replace(/-+$/, '') || 'UC' }}-1</strong>, then -2, -3 and so on. New entries get the next number automatically.</div>
+          <div class="hint">Values look like <strong>{{ (newColumnPrefix || 'UC').trim().replace(/\s+/g, '').replace(/-+$/, '') || 'UC' }}-1</strong>, then -2, -3 and so on. Existing entries are numbered in row order; new entries get the next number automatically.</div>
         </div>
       </div>
       <div class="modal-foot">
@@ -1166,7 +1166,7 @@
         <div class="field">
           <label>Column</label>
           <div><strong>{{ copyColumn.name }}</strong> <span class="field-type" style="margin-left:2px;">{{ typeLabels[copyColumn.type] }}</span></div>
-          <div class="hint">Only the definition is copied: name, type and settings<template v-if="copyColumn.type === 'select'"> (including its values list)</template>. Cells start empty.</div>
+          <div class="hint">Only the definition is copied: name, type and settings<template v-if="copyColumn.type === 'select'"> (including its values list)</template>.<template v-if="copyColumn.type === 'id'"> Existing entries are numbered in row order.</template><template v-else> Cells start empty.</template></div>
         </div>
         <div class="field" style="margin-bottom:0;">
           <label>To sheets</label>
@@ -2956,7 +2956,12 @@ createApp({
       newColumnSource.value = '';
       addColumnOpen.value = true;
     }
-    /* adds a column to a sheet's `cols` and gives every row in `sheetRows` an empty value; returns the column */
+    /* fills an ID column in `sheetRows` with PREFIX-1, PREFIX-2, ... following the row sequence */
+    function numberIdColumn(col, sheetRows) {
+      sheetRows.forEach((r, i) => { r.values[col.id] = col.prefix + '-' + (i + 1); });
+    }
+    /* adds a column to a sheet's `cols` and gives every row in `sheetRows` an empty value
+       (an ID column is numbered in row order instead); returns the column */
     function insertColumn(cols, sheetRows, { name, type, prefix, global }) {
       const base = slugify(name) || 'column';
       let id = base, n = 1;
@@ -2965,7 +2970,8 @@ createApp({
         : global ? { id, name, type: 'select', globalId: global.id, options: global.values.slice(), width: 200 }
         : { id, name, type, width: 200 };
       cols.push(col);
-      sheetRows.forEach(r => { r.values[id] = emptyValueFor(col.type); });
+      if (col.type === 'id') numberIdColumn(col, sheetRows);
+      else sheetRows.forEach(r => { r.values[id] = emptyValueFor(col.type); });
       return col;
     }
     /* Add Column: picking a global column fills in the name and makes it a Set */
@@ -3019,7 +3025,8 @@ createApp({
         while (c.columns.some(x => x.id === id)) { id = base + '_' + (n++); }
         const copy = { ...JSON.parse(JSON.stringify(def)), id };
         c.columns.push(copy);
-        c.rows.forEach(r => { r.values[id] = emptyValueFor(copy.type); });
+        if (copy.type === 'id') numberIdColumn(copy, c.rows);
+        else c.rows.forEach(r => { r.values[id] = emptyValueFor(copy.type); });
         return copy;
       });
     }
@@ -4677,7 +4684,7 @@ createApp({
       },
       {
         name: 'addColumn',
-        description: 'Add a column at the end of a sheet. With "fromGlobal" it becomes a Set column linked to that global column.',
+        description: 'Add a column at the end of a sheet. An ID column numbers the existing rows in row order (PREFIX-1, PREFIX-2, ...). With "fromGlobal" it becomes a Set column linked to that global column.',
         inputSchema: obj({ sheet: S_SHEET, ...S_COLSPEC.properties }),
         plan: a => {
           const s = apiSheet(a.sheet), sp = apiColumnSpec(a);
@@ -4786,7 +4793,7 @@ createApp({
       },
       {
         name: 'copyColumnToSheets',
-        description: 'Copy a column\'s definition (name, type, settings and, for a Set column, its values list) to other sheets. No cell values are copied; the new columns start empty. Not allowed for Set columns linked to a global column (use addColumn { fromGlobal } on each sheet instead).',
+        description: 'Copy a column\'s definition (name, type, settings and, for a Set column, its values list) to other sheets. No cell values are copied; the new columns start empty, except an ID column, which numbers each target sheet\'s rows in row order. Not allowed for Set columns linked to a global column (use addColumn { fromGlobal } on each sheet instead).',
         inputSchema: obj({ sheet: S_SHEET, column: S_COLUMN, toSheets: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Names of the sheets to copy the column to.' } }, ['column', 'toSheets']),
         plan: a => {
           const s = apiSheet(a.sheet), col = apiColumn(s, a.column);
@@ -4808,7 +4815,7 @@ createApp({
           return {
             summary: `Copy column "${col.name}" from "${s.name}" to ${targets.length === 1 ? '"' + targets[0].name + '"' : targets.length + ' sheets'}`,
             details: [`Type: ${typeLabels[col.type]}${col.prefix ? ' (prefix ' + col.prefix + ')' : ''}${options ? '; values: ' + clip(options.join(', '), 200) : ''}`,
-              `To: ${targets.map(t => t.name).join(', ')}`, 'Only the definition is copied; the new columns start empty.'],
+              `To: ${targets.map(t => t.name).join(', ')}`, col.type === 'id' ? 'Only the definition is copied; existing rows in each sheet are numbered in row order.' : 'Only the definition is copied; the new columns start empty.'],
             apply: () => {
               targets.forEach(t => {
                 if (!sheets.includes(t)) fail('CHANGED', `Sheet "${t.name}" was deleted.`);
