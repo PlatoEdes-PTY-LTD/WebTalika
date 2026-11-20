@@ -972,6 +972,7 @@
           <label>Column Name</label>
           <input type="text" v-model="newColumnName" placeholder="e.g. Owner" @keydown.enter.prevent="confirmAddColumn">
         </div>
+        <div class="hint" v-if="!newColumnGlobal && newColumnType === 'select' && newColumnNameGlobal" style="margin:-6px 0 12px;">A global column is named <strong>{{ newColumnNameGlobal.name }}</strong>, so this Set column will be linked to it.</div>
         <div class="field" style="margin-bottom:0;" v-if="newColumnGlobal">
           <label>Values</label>
           <div class="global-chips">
@@ -1266,7 +1267,7 @@
   <div class="overlay" v-if="globalColsOpen" @mousedown.self="closeGlobalColumns">
     <div class="modal modal-small">
       <div class="modal-head">
-        <h2>{{ globalEdit ? (globalEdit.id ? 'Edit Global Column' : 'New Global Column') : 'Global Columns' }}</h2>
+        <h2>{{ globalEdit ? (globalEdit.id ? 'Edit Global Column' : 'New Global Column') : (globalInsert ? 'Add to Sheets' : 'Global Columns') }}</h2>
         <button class="icon-btn" @click="closeGlobalColumns" aria-label="Close">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -1293,9 +1294,34 @@
           <button class="btn btn-primary" :disabled="globalEditInvalid" @click="saveGlobalEdit">{{ globalEdit.id ? 'Save' : 'Create' }}</button>
         </div>
       </template>
+      <template v-else-if="globalInsert">
+        <div class="modal-body">
+          <div class="field">
+            <label>Global column</label>
+            <div><strong>{{ globalInsert.g.name }}</strong> <span class="field-type" style="margin-left:2px;">{{ globalInsert.g.values.length }} {{ globalInsert.g.values.length === 1 ? 'value' : 'values' }}</span></div>
+            <div class="hint">Adds a linked Set column named <strong>{{ globalInsert.g.name }}</strong> at the end of each sheet you tick. Cells start empty.</div>
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label>To sheets</label>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <label class="col-vis-item" v-for="t in globalInsertTargets" :key="t.sheet.id" :class="{ 'is-hidden': t.reason }" :title="t.reason === 'linked' ? 'This sheet already has this global column' : (t.reason ? 'This sheet already has a ' + typeLabels[t.reason] + ' column named &quot;' + globalInsert.g.name + '&quot;' : '')">
+                <input type="checkbox" :value="t.sheet.id" v-model="globalInsert.selected" :disabled="!!t.reason">
+                <span class="col-vis-name" style="text-decoration:none;">{{ t.sheet.name }}</span>
+                <span class="col-menu-note" v-if="t.reason === 'linked'">has it</span>
+                <span class="col-menu-note" v-else-if="t.reason">name taken</span>
+              </label>
+            </div>
+            <div class="hint" v-if="globalInsertTargets.length && globalInsertTargets.every(t => t.reason)">Every sheet already has a column with this name.</div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="globalInsert = null">Back</button>
+          <button class="btn btn-primary" :disabled="!globalInsert.selected.length" @click="confirmGlobalInsert">Add{{ globalInsert.selected.length > 1 ? ' to ' + globalInsert.selected.length + ' sheets' : '' }}</button>
+        </div>
+      </template>
       <template v-else>
         <div class="modal-body">
-          <p class="hint" style="margin:0 0 12px;">Reusable Set columns with their own list of values. Insert one into any sheet from <strong>Add Column</strong>; values you add here later show up in those sheet columns. They stay when you import a file and are removed by Reset All. They are not exported to Excel.</p>
+          <p class="hint" style="margin:0 0 12px;">Reusable Set columns with their own list of values. Insert one into sheets with its <strong>+</strong> button, or from <strong>Add Column</strong>. A Set column whose name matches a global column is linked to it automatically. Values you add here later show up in those sheet columns. They stay when you import a file and are removed by Reset All. They are not exported to Excel.</p>
           <div class="col-vis-list" v-if="globalColumns.length">
             <div class="col-vis-item global-item" v-for="g in globalColumns" :key="g.id">
               <div class="global-item-main">
@@ -1307,6 +1333,9 @@
                 <button type="button" class="btn" style="background:var(--danger);border-color:var(--danger);color:#fff" @click="deleteGlobalColumn(g)">Delete</button>
               </template>
               <template v-else>
+                <button type="button" class="icon-btn" @click="startGlobalInsert(g)" :title="'Add ' + g.name + ' to sheets'" :aria-label="'Add ' + g.name + ' to sheets'">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
                 <button type="button" class="icon-btn" @click="startGlobalEdit(g)" :title="'Edit ' + g.name" :aria-label="'Edit ' + g.name">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
@@ -2088,6 +2117,8 @@ createApp({
     }
 
     function persist() {
+      // a guest edits the host's document: leave linking to the host's own global columns
+      if (!collabApplying && collab.role !== 'guest') autoLinkGlobalColumns();
       try {
         const data = {
           active: sheets.findIndex(s => s.id === activeSheetId.value),
@@ -2182,13 +2213,73 @@ createApp({
       return out;
     }
     function globalLinkCount(id) { return linkedColumnsOf(id).length; }
+    function globalByName(name) {
+      const key = String(name == null ? '' : name).trim().toLowerCase();
+      return key ? globalColumns.find(g => g.name.trim().toLowerCase() === key) || null : null;
+    }
+    /* a Set column named like a global column (case-insensitive) and not
+       linked to an existing one gets linked to it. Runs from persist(), so
+       it covers import, add, rename, change type, copy and agent changes.
+       Returns how many columns were linked. */
+    function autoLinkGlobalColumns() {
+      if (!globalColumns.length) return 0;
+      let n = 0;
+      sheets.forEach(s => {
+        if (s.isIndex) return;
+        sheetContent(s).columns.forEach(c => {
+          if (c.type !== 'select' || c.locked || globalColumnById(c.globalId)) return;
+          const g = globalByName(c.name);
+          if (!g) return;
+          c.globalId = g.id;
+          c.options = g.values.slice();
+          n++;
+        });
+      });
+      return n;
+    }
+    /* ---- insert a global column into several sheets ---- */
+    const globalInsert = ref(null); // { g, selected: [sheet ids] }
+    const globalInsertTargets = computed(() => {
+      const gi = globalInsert.value;
+      if (!gi) return [];
+      const key = gi.g.name.trim().toLowerCase();
+      return sheets.filter(s => !s.isIndex).map(s => {
+        const same = sheetContent(s).columns.find(c => c.name.trim().toLowerCase() === key);
+        const linked = sheetContent(s).columns.some(c => c.type === 'select' && c.globalId === gi.g.id);
+        return { sheet: s, reason: linked ? 'linked' : (same ? same.type : '') };
+      });
+    });
+    function startGlobalInsert(g) {
+      globalToDelete.value = null;
+      globalInsert.value = { g, selected: [] };
+    }
+    /* adds a column linked to global column `g` to each sheet in `targets`; returns the new columns */
+    function insertGlobalIntoSheets(g, targets) {
+      return targets.map(t => {
+        const c = sheetContent(t);
+        return insertColumn(c.columns, c.rows, { name: g.name, type: 'select', global: g });
+      });
+    }
+    function confirmGlobalInsert() {
+      const gi = globalInsert.value;
+      if (!gi) return;
+      const ids = new Set(gi.selected);
+      const targets = globalInsertTargets.value.filter(t => !t.reason && ids.has(t.sheet.id)).map(t => t.sheet);
+      globalInsert.value = null;
+      if (!targets.length) return;
+      insertGlobalIntoSheets(gi.g, targets);
+      persist();
+      showToast(targets.length === 1 ? `Added "${gi.g.name}" to "${targets[0].name}"` : `Added "${gi.g.name}" to ${targets.length} sheets`);
+    }
     function openGlobalColumns() {
       globalEdit.value = null;
+      globalInsert.value = null;
       globalColsOpen.value = true;
     }
     function closeGlobalColumns() {
       globalColsOpen.value = false;
       globalEdit.value = null;
+      globalInsert.value = null;
     }
     function startGlobalEdit(g) {
       globalEdit.value = g
@@ -2810,9 +2901,20 @@ createApp({
       const name = renameDraft.value.trim();
       renamingColId.value = null;
       if (!name || name === col.name) return;
-      col.name = name;
+      const unlinked = renameColumnTo(col, name);
       persist();
-      showToast(`Renamed column to "${name}"`);
+      showToast(unlinked ? `Renamed column to "${name}" and unlinked it from global column "${unlinked}"` : `Renamed column to "${name}"`);
+    }
+    /* renames a column. A column linked to a global column is unlinked (it keeps
+       the values it has) unless only the letter case changes; persist() may then
+       link it to another global column with the new name. Returns the name of
+       the global column it was unlinked from, or ''. */
+    function renameColumnTo(col, name) {
+      const g = isGlobalLinked(col) ? globalColumnById(col.globalId) : null;
+      const unlink = g && name.trim().toLowerCase() !== col.name.trim().toLowerCase();
+      if (unlink) { col.options = g.values.slice(); delete col.globalId; }
+      col.name = name;
+      return unlink ? g.name : '';
     }
 
     /* ---- column reorder (drag and drop) ---- */
@@ -2868,6 +2970,7 @@ createApp({
     }
     /* Add Column: picking a global column fills in the name and makes it a Set */
     const newColumnGlobal = computed(() => globalColumnById(newColumnSource.value));
+    const newColumnNameGlobal = computed(() => globalByName(newColumnName.value));
     watch(newColumnSource, (id, oldId) => {
       const g = globalColumnById(id), prev = globalColumnById(oldId);
       if (g) {
@@ -4000,6 +4103,7 @@ createApp({
 
     loadGlobalColumns();
     loadPersisted();
+    if (autoLinkGlobalColumns()) persist();
 
     if (/^#join=/.test(location.hash)) {
       checkJoinLink();
@@ -4586,7 +4690,7 @@ createApp({
       },
       {
         name: 'renameColumn',
-        description: 'Rename a column. Its id does not change.',
+        description: 'Rename a column. Its id does not change. A column linked to a global column is unlinked (keeping its current values) unless only the letter case changes; the result then has "unlinkedFrom". If the new name matches another global column, it is linked to that one.',
         inputSchema: obj({ sheet: S_SHEET, column: S_COLUMN, newName: { type: 'string' } }, ['column', 'newName']),
         plan: a => {
           const s = apiSheet(a.sheet), col = apiColumn(s, a.column);
@@ -4594,8 +4698,9 @@ createApp({
           const name = String(a.newName || '').trim();
           if (!name) fail('INVALID_ARGUMENT', 'A new name is required.');
           return {
-            summary: `Rename column "${col.name}" to "${name}" in "${s.name}"`, details: [],
-            apply: () => { apiShow(s); col.name = name; persist(); return apiColumnInfo(s, col); }
+            summary: `Rename column "${col.name}" to "${name}" in "${s.name}"`,
+            details: isGlobalLinked(col) && name.toLowerCase() !== col.name.trim().toLowerCase() ? [`It will be unlinked from global column "${globalColumnById(col.globalId).name}" and keep its current values.`] : [],
+            apply: () => { apiShow(s); const unlinked = renameColumnTo(col, name); persist(); return { ...apiColumnInfo(s, col), ...(unlinked ? { unlinkedFrom: unlinked } : {}) }; }
           };
         }
       },
@@ -4847,6 +4952,39 @@ createApp({
         }
       },
       {
+        name: 'addGlobalColumnToSheets',
+        description: 'Add a Set column linked to a global column to several sheets at once. Each new column takes the global column\'s name and starts empty. Fails if a target already has a column with that name.',
+        inputSchema: obj({ globalColumn: { type: 'string', description: 'Global column id or name.' }, toSheets: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Names of the sheets to add the column to.' } }, ['globalColumn', 'toSheets']),
+        plan: a => {
+          const g = apiGlobal(a.globalColumn);
+          if (!Array.isArray(a.toSheets) || !a.toSheets.length) fail('INVALID_ARGUMENT', '"toSheets" must be a non-empty array of sheet names.');
+          const key = g.name.trim().toLowerCase();
+          const hasName = t => sheetContent(t).columns.some(c => c.name.trim().toLowerCase() === key);
+          const targets = [];
+          a.toSheets.forEach(ref => {
+            if (ref === undefined || ref === null || String(ref).trim() === '') fail('INVALID_ARGUMENT', 'Sheet names in "toSheets" can\'t be empty.');
+            const t = apiSheet(ref);
+            if (t.isIndex) fail('INDEX_SHEET', 'Columns can\'t be added to the Index sheet this way.');
+            if (hasName(t)) fail('CONFLICT', `Sheet "${t.name}" already has a column named "${g.name}".`);
+            if (!targets.includes(t)) targets.push(t);
+          });
+          return {
+            summary: `Add global column "${g.name}" to ${targets.length === 1 ? '"' + targets[0].name + '"' : targets.length + ' sheets'}`,
+            details: [`Values: ${clip(g.values.join(', '), 200)}`, `To: ${targets.map(t => t.name).join(', ')}`],
+            apply: () => {
+              if (!globalColumnById(g.id)) fail('CHANGED', 'The global column was deleted.');
+              targets.forEach(t => {
+                if (!sheets.includes(t)) fail('CHANGED', `Sheet "${t.name}" was deleted.`);
+                if (hasName(t)) fail('CHANGED', `Sheet "${t.name}" now has a column named "${g.name}".`);
+              });
+              const made = insertGlobalIntoSheets(g, targets);
+              persist();
+              return { added: made.map((c, i) => ({ sheet: targets[i].name, ...apiColumnInfo(targets[i], c) })) };
+            }
+          };
+        }
+      },
+      {
         name: 'makeGlobalFromColumn',
         description: 'Create a global column from a Set column of a sheet (its values, unless "values" is given) and link that column to it.',
         inputSchema: obj({ sheet: S_SHEET, column: S_COLUMN, name: { type: 'string' }, values: { type: 'array', items: { type: 'string' } } }, ['column']),
@@ -4991,7 +5129,8 @@ createApp({
       openNewInstance,
       globalColumns, globalColsOpen, globalEdit, globalEditValues, globalEditNameTaken, globalEditInvalid, globalToDelete,
       openGlobalColumns, closeGlobalColumns, startGlobalEdit, cancelGlobalEdit, saveGlobalEdit, deleteGlobalColumn,
-      globalColumnById, globalLinkCount, isGlobalLinked, newColumnSource, newColumnGlobal,
+      globalColumnById, globalLinkCount, isGlobalLinked, newColumnSource, newColumnGlobal, newColumnNameGlobal,
+      globalInsert, globalInsertTargets, startGlobalInsert, confirmGlobalInsert,
       resetAllOpen, resetAll,
       showHiddenInDialog, dialogColumns, openAdd, openEdit, closeDialog, saveEntry, saveAndClose, editingPosition, hasNextRecord, canSaveAndNext, editNext, confirmDelete, confirmDeleteSelected, doDelete,
       handleImport, startResize,

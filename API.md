@@ -89,11 +89,20 @@ Every call returns a Promise of `{ ok: true, data }` or `{ ok: false, error: { c
 | `updateGlobalColumn` | `globalColumn`, `newName?`, `values?` | yes |
 | `deleteGlobalColumn` | `globalColumn` | yes |
 | `makeGlobalFromColumn` | `sheet?`, `column`, `name?`, `values?` | yes |
+| `addGlobalColumnToSheets` | `globalColumn`, `toSheets: [sheet name]` | yes |
 
 **`copyColumnToSheets`** copies only the column's definition: its name, type, settings (ID prefix, date and time formats, width) and, for a Set column, its list of values (the defined values plus the values used in the column). The new columns are added at the end of each target sheet, visible, with empty cells. The call fails, and nothing is copied, if a target is the Index sheet (`INDEX_SHEET`) or the source sheet (`INVALID_ARGUMENT`), or already has a column with the same name (`CONFLICT`). A Set column linked to a global column can't be copied (`NOT_ALLOWED`): add it to each sheet with `addColumn { fromGlobal }` instead. Locked Index columns return `LOCKED`.
 
 ```js
 await WebTalika.copyColumnToSheets({ sheet: 'Tasks', column: 'Status', toSheets: ['Bugs', 'Ideas'] });   // dialog
+```
+
+**`addGlobalColumnToSheets`** adds a Set column linked to the global column, named after it, at the end of each target sheet. It fails, and nothing is added, if a target is the Index sheet (`INDEX_SHEET`) or already has a column with that name (`CONFLICT`).
+
+**Automatic linking.** A Set column whose name matches a global column (case-insensitive) and that is not linked to an existing global column is linked to it whenever the document is saved. So `addColumn { name: 'Priority', type: 'select' }`, `renameColumn` to a global column's name, `changeColumnType` to `select`, and `createGlobalColumn` with a name already used by Set columns all produce linked columns. `listColumns` shows the link as `globalColumn`. `renameColumn` on a linked column unlinks it (the column keeps its current values) unless only the letter case changes, and its result has `unlinkedFrom` with the global column's name. Because a linked column can't be copied, `copyColumnToSheets` returns `NOT_ALLOWED` for such a column.
+
+```js
+await WebTalika.addGlobalColumnToSheets({ globalColumn: 'Priority', toSheets: ['Tasks', 'Bugs'] });   // dialog
 ```
 
 **`where` operators:**
