@@ -113,6 +113,7 @@ The table supports:
 - clicking a header's arrow to sort ascending, descending, or clear
 - a filter on every column, opened from **Filter…** in the column menu (the ▾ button in the header, which opens on hover or tap): a range for Number, Date and Date & Time (min/max or from/to), a checklist of values (including Unset) for Set, and a case-insensitive "contains" match for Text, Link, List and ID. Filters combine, so a row must pass all of them. A filtered column's header turns amber, and the round Clear Filters button in the toolbar turns amber, shows how many filters are active, and clears them all. When filters leave no rows, the empty state says so and offers the same button.
 - hover icons on a column header to change its data type, rename it (double-clicking the name also works), or remove it
+- **Copy to other sheets…** in the column menu, which adds the column's definition (name, type, settings and, for a Set, its values list) to the chosen sheets with empty cells; sheets that already have a column of that name are skipped, and Set columns linked to a global column can't be copied
 - List and Link values drawn as colored pills, with link entries clickable
 - edit and delete icons on each row, in a column pinned to the right edge so it stays visible while the table scrolls horizontally
 - a table that fills the page width; when the columns are wider than the page, only the table area scrolls horizontally

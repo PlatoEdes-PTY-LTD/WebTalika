@@ -155,7 +155,7 @@ Search for function names. Do not use line numbers. The line numbers change.
 { id: string, name: string, type: string, width: number, prefix?: string, hidden?: true, globalId?: string, options?: string[] }
 ```
 
-`globalId` and `options` exist only on a column of type `select` that is linked to a global column (Section 9.12). `globalId` is the global column's ID. `options` is a copy of its values. Change type to another type deletes both keys.
+`globalId` and `options` exist only on a column of type `select`. `globalId` is set on a column linked to a global column (Section 9.12), and `options` is then a copy of its values. A Set column copied from another sheet (Section 9.6b) has `options` without `globalId`: the source column's values list. Change type to another type deletes both keys.
 
 `prefix` exists only on a column of type `id`.
 
@@ -403,10 +403,20 @@ All dialogs use `.overlay` with `.modal`. A mouse-down on the overlay closes the
 ### 9.6a Column menu
 
 - Each header cell has a `.col-menu-btn` (▾) after the name, in place of the old filter, change-type, rename and remove icons. It is amber (`.active`) when the column has a filter.
-- The menu `.col-menu` is teleported to `body` (the table scroller would clip it) and positioned under the button with `position: fixed`, kept on screen, and opened upwards when there is no room below. Items: **Filter…** (opens the filter popover under the button, `openFilterPopoverAt`), **Change type** (shows the current type), **Rename**, **Make global column…** (only on `select` columns; note "linked" when the column is already linked), and **Remove column**. Locked Index columns show only Filter… and a note.
+- The menu `.col-menu` is teleported to `body` (the table scroller would clip it) and positioned under the button with `position: fixed`, kept on screen, and opened upwards when there is no room below. Items: **Filter…** (opens the filter popover under the button, `openFilterPopoverAt`), **Change type** (shows the current type), **Rename**, **Make global column…** (only on `select` columns; note "linked" when the column is already linked), **Copy to other sheets…** (Section 9.6b), and **Remove column**. Locked Index columns show only Filter… and a note.
 - **Hover.** `pointerenter` on the button with `pointerType === 'mouse'` opens it (`onColMenuHover`). Leaving the button or the menu starts a 250ms close timer (`onColMenuLeave`); entering the menu clears it (`keepColMenu`).
 - **Click or tap** toggles it (`clickColMenu`). A click on a menu opened by hover keeps it open. Touch never opens on hover, so a tap opens and a second tap closes.
 - It closes on an outside `mousedown`, on any scroll outside it (the button moves with the table), and after an item is chosen (`colMenuAction`). The filter popover's outside-click check ignores clicks in the menu and on the button.
+
+### 9.6b Copy a column to other sheets
+
+**Purpose.** Reuse a column's definition on other sheets without its values.
+
+- **Menu item.** **Copy to other sheets…** shows when `contentSheetCount > 1` and the column is not linked to a global column (`!isGlobalLinked(col)`). Locked Index columns never show it. `colMenuAction('copy')` calls `openCopyColumn(col)`.
+- **Dialog.** `copyColumn` holds the source column; `copyColumnSelected` holds the ticked sheet ids. `copyColumnTargets` lists every non-Index sheet except the shown one, each with `clash: true` when it already has a column with the same name (case-insensitive). Clashing sheets are disabled and marked "has it". Copy is disabled until a sheet is ticked.
+- **Copy.** `confirmCopyColumn` deep-copies the column, drops `hidden`, and for a `select` column drops `globalId` and sets `options` to `selectOptionsFor(col.id)` (defined values plus values used in the column). For each target it picks a unique id from `slugify(name)` (as `insertColumn` does), appends the column to `sheetContent(s).columns`, and gives every row `emptyValueFor(type)`. Then `persist()` and a toast.
+- **Shared code.** `copyColumnDefinition(col, options, targets)` does the copy for both the dialog (options from `selectOptionsFor`) and the agent tool `copyColumnToSheets` (options from `apiSheetOptions`, so the source sheet need not be on screen). It returns the new columns.
+- **Rules.** Global-linked Set columns are refused in `openCopyColumn`, `confirmCopyColumn`, and the agent tool (`NOT_ALLOWED`); to reuse one, insert it from **Start from** in Add Column. The agent tool also refuses the Index sheet as a target (`INDEX_SHEET`), the source sheet (`INVALID_ARGUMENT`), and a target with a column of the same name (`CONFLICT`); `apply` checks again for deleted targets and new name clashes (`CHANGED`).
 
 ### 9.7a Touch screens (phones, iPad)
 
@@ -672,7 +682,7 @@ No automated test suite exists. Each session writes short Playwright scripts. Ch
 | Export confirm | `getByRole('button', { name: /^Export$/ })` |
 | Import a file | `page.setInputFiles('input[type=file]', path)` |
 | Header cells | `thead th.col-custom-th` |
-| Column menu button | `.col-menu-btn` (hover or click it); menu `.col-menu`, items by text: Filter…, Change type, Rename, Remove column |
+| Column menu button | `.col-menu-btn` (hover or click it); menu `.col-menu`, items by text: Filter…, Change type, Rename, Copy to other sheets…, Remove column |
 | Actions cell | `td.col-actions` |
 | Table scroller | `.table-wrap` |
 | More-columns button | `.more-cols-btn` |
@@ -767,6 +777,7 @@ No automated test suite exists. Each session writes short Playwright scripts. Ch
 | 48 | Global columns: reusable Set columns (name + values) in a Global Columns dialog (globe button in the toolbar), stored per instance under `webtalika-global-columns-v1`. Insert from **Start from** in Add Column; the column keeps a one-way link (`globalId`) and a copy (`options`). **Make global column…** in the column menu creates one from a Set column. Kept on import, cleared by Reset All, not exported. |
 | 49 | Agent API: `window.WebTalika` with 25 tools (read, sheets, columns, rows, global columns) and the same tools registered as WebMCP tools. Every change asks the user (Allow, Deny, Allow automatically); AI button in the header with the auto setting and recent activity. Rows get stable ids saved as `u`. Reference in `API.md`. |
 | 50 | Agent view tools: `getView`, `setSearch`, `setFilter`, `setSort`, `clearFilters` (no permission: they change only what is shown). `queryRows { onScreen: true }` reads the rows on screen. `describe()` gives each tool a `kind` (read, view, change). |
+| 51 | Column menu: **Copy to other sheets…** copies a column's definition (no values) to the ticked sheets. Sheets with a column of the same name are skipped. Not offered for global-linked Set columns. A copied Set column keeps its values list in `options`. Agent tool `copyColumnToSheets` (also a WebMCP tool) does the same. |
 
 ---
 

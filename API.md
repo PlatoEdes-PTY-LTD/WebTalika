@@ -81,6 +81,7 @@ Every call returns a Promise of `{ ok: true, data }` or `{ ok: false, error: { c
 | `setColumnHidden` | `sheet?`, `column`, `hidden` | yes |
 | `moveColumn` | `sheet?`, `column`, `toIndex` | yes |
 | `removeColumn` | `sheet?`, `column` | yes |
+| `copyColumnToSheets` | `sheet?`, `column`, `toSheets: [sheet name]` | yes |
 | `addRows` | `sheet?`, `rows: [{ column: value }]` (≤ 500) | yes |
 | `updateRows` | `sheet?`, `updates: [{ id, values }]` (≤ 500) | yes |
 | `deleteRows` | `sheet?`, `ids` | yes |
@@ -88,6 +89,12 @@ Every call returns a Promise of `{ ok: true, data }` or `{ ok: false, error: { c
 | `updateGlobalColumn` | `globalColumn`, `newName?`, `values?` | yes |
 | `deleteGlobalColumn` | `globalColumn` | yes |
 | `makeGlobalFromColumn` | `sheet?`, `column`, `name?`, `values?` | yes |
+
+**`copyColumnToSheets`** copies only the column's definition: its name, type, settings (ID prefix, date and time formats, width) and, for a Set column, its list of values (the defined values plus the values used in the column). The new columns are added at the end of each target sheet, visible, with empty cells. The call fails, and nothing is copied, if a target is the Index sheet (`INDEX_SHEET`) or the source sheet (`INVALID_ARGUMENT`), or already has a column with the same name (`CONFLICT`). A Set column linked to a global column can't be copied (`NOT_ALLOWED`): add it to each sheet with `addColumn { fromGlobal }` instead. Locked Index columns return `LOCKED`.
+
+```js
+await WebTalika.copyColumnToSheets({ sheet: 'Tasks', column: 'Status', toSheets: ['Bugs', 'Ideas'] });   // dialog
+```
 
 **`where` operators:**
 

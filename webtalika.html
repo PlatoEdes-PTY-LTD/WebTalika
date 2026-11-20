@@ -766,6 +766,9 @@
           :title="isGlobalLinked(colMenu.col) ? 'This column already takes its values from a global column; this creates another one from its current values' : 'Save this column\'s values as a reusable global column'">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 010 18a14 14 0 010-18z"/></svg><span>Make global column…</span><span class="col-menu-note" v-if="isGlobalLinked(colMenu.col)">linked</span>
         </button>
+        <button type="button" role="menuitem" v-if="contentSheetCount > 1 && !isGlobalLinked(colMenu.col)" @click="colMenuAction('copy')" title="Add this column's definition (name, type, settings; no values) to other sheets">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg><span>Copy to other sheets…</span>
+        </button>
         <div class="col-menu-sep"></div>
         <button type="button" role="menuitem" class="danger" @click="colMenuAction('remove')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span>Remove column</span>
@@ -1148,6 +1151,36 @@
       <div class="modal-foot">
         <button class="btn" @click="cancelChangeType">Cancel</button>
         <button class="btn btn-primary" :disabled="changeTypeIsNoop || changeTypeInvalid" @click="confirmChangeType">{{ changeTypeValue === 'id' && changeTypeCol.type === 'id' ? 'Change prefix' : 'Change type' }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Copy column definition to other sheets -->
+  <div class="overlay" v-if="copyColumn" @mousedown.self="cancelCopyColumn">
+    <div class="modal modal-small">
+      <div class="modal-head">
+        <h2>Copy column to sheets</h2>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Column</label>
+          <div><strong>{{ copyColumn.name }}</strong> <span class="field-type" style="margin-left:2px;">{{ typeLabels[copyColumn.type] }}</span></div>
+          <div class="hint">Only the definition is copied: name, type and settings<template v-if="copyColumn.type === 'select'"> (including its values list)</template>. Cells start empty.</div>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>To sheets</label>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label class="col-vis-item" v-for="t in copyColumnTargets" :key="t.sheet.id" :class="{ 'is-hidden': t.clash }" :title="t.clash ? 'This sheet already has a column named &quot;' + copyColumn.name + '&quot;' : ''">
+              <input type="checkbox" :value="t.sheet.id" v-model="copyColumnSelected" :disabled="t.clash">
+              <span class="col-vis-name" style="text-decoration:none;">{{ t.sheet.name }}</span>
+              <span class="col-menu-note" v-if="t.clash">has it</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" @click="cancelCopyColumn">Cancel</button>
+        <button class="btn btn-primary" :disabled="!copyColumnSelected.length" @click="confirmCopyColumn">Copy{{ copyColumnSelected.length > 1 ? ' to ' + copyColumnSelected.length + ' sheets' : '' }}</button>
       </div>
     </div>
   </div>
@@ -2585,6 +2618,7 @@ createApp({
       else if (action === 'rename') startRename(m.col);
       else if (action === 'remove') removeColumn(m.col);
       else if (action === 'global') makeGlobalFromColumn(m.col);
+      else if (action === 'copy') openCopyColumn(m.col);
     }
     window.addEventListener('mousedown', e => {
       if (colMenu.value && !(e.target.closest && (e.target.closest('.col-menu') || e.target.closest('.col-menu-btn')))) colMenu.value = null;
@@ -2854,6 +2888,54 @@ createApp({
       persist();
       addColumnOpen.value = false;
       showToast(`Added column "${name}"`);
+    }
+    /* ---- copy a column's definition (no values) to other sheets ---- */
+    const copyColumn = ref(null);
+    const copyColumnSelected = ref([]);
+    const copyColumnTargets = computed(() => {
+      const col = copyColumn.value;
+      if (!col) return [];
+      const name = col.name.trim().toLowerCase();
+      return sheets.filter(s => !s.isIndex && s.id !== activeSheetId.value).map(s => ({
+        sheet: s,
+        clash: sheetContent(s).columns.some(c => c.name.trim().toLowerCase() === name)
+      }));
+    });
+    /* appends a copy of `col`'s definition (no values) to each sheet in `targets`;
+       a Set column gets `options` (its values list) and no global link.
+       Used by the column menu and the agent tool copyColumnToSheets. */
+    function copyColumnDefinition(col, options, targets) {
+      const def = JSON.parse(JSON.stringify(col));
+      delete def.hidden;
+      delete def.globalId;
+      if (def.type === 'select') def.options = (options || []).slice(); else delete def.options;
+      return targets.map(s => {
+        const c = sheetContent(s);
+        const base = slugify(def.name) || 'column';
+        let id = base, n = 1;
+        while (c.columns.some(x => x.id === id)) { id = base + '_' + (n++); }
+        const copy = { ...JSON.parse(JSON.stringify(def)), id };
+        c.columns.push(copy);
+        c.rows.forEach(r => { r.values[id] = emptyValueFor(copy.type); });
+        return copy;
+      });
+    }
+    function openCopyColumn(col) {
+      if (!col || col.locked || isGlobalLinked(col)) return;
+      copyColumn.value = col;
+      copyColumnSelected.value = [];
+    }
+    function cancelCopyColumn() { copyColumn.value = null; }
+    function confirmCopyColumn() {
+      const col = copyColumn.value;
+      if (!col || isGlobalLinked(col)) { copyColumn.value = null; return; }
+      const ids = new Set(copyColumnSelected.value);
+      const targets = copyColumnTargets.value.filter(t => !t.clash && ids.has(t.sheet.id)).map(t => t.sheet);
+      copyColumn.value = null;
+      if (!targets.length) return;
+      copyColumnDefinition(col, selectOptionsFor(col.id), targets);
+      persist();
+      showToast(targets.length === 1 ? `Copied "${col.name}" to "${targets[0].name}"` : `Copied "${col.name}" to ${targets.length} sheets`);
     }
     /* ---- change column type ---- */
     const changeTypeCol = ref(null);
@@ -4598,6 +4680,43 @@ createApp({
         }
       },
       {
+        name: 'copyColumnToSheets',
+        description: 'Copy a column\'s definition (name, type, settings and, for a Set column, its values list) to other sheets. No cell values are copied; the new columns start empty. Not allowed for Set columns linked to a global column (use addColumn { fromGlobal } on each sheet instead).',
+        inputSchema: obj({ sheet: S_SHEET, column: S_COLUMN, toSheets: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Names of the sheets to copy the column to.' } }, ['column', 'toSheets']),
+        plan: a => {
+          const s = apiSheet(a.sheet), col = apiColumn(s, a.column);
+          if (col.locked) fail('LOCKED', `"${col.name}" is a locked Index column. It can't be copied.`);
+          if (isGlobalLinked(col)) fail('NOT_ALLOWED', `"${col.name}" is linked to global column "${globalColumnById(col.globalId).name}". Add it to other sheets with addColumn { fromGlobal } instead.`);
+          if (!Array.isArray(a.toSheets) || !a.toSheets.length) fail('INVALID_ARGUMENT', '"toSheets" must be a non-empty array of sheet names.');
+          const key = col.name.trim().toLowerCase();
+          const hasName = t => sheetContent(t).columns.some(c => c.name.trim().toLowerCase() === key);
+          const targets = [];
+          a.toSheets.forEach(ref => {
+            if (ref === undefined || ref === null || String(ref).trim() === '') fail('INVALID_ARGUMENT', 'Sheet names in "toSheets" can\'t be empty.');
+            const t = apiSheet(ref);
+            if (t.isIndex) fail('INDEX_SHEET', 'Columns can\'t be copied to the Index sheet.');
+            if (t.id === s.id) fail('INVALID_ARGUMENT', `"${t.name}" is the sheet the column comes from.`);
+            if (hasName(t)) fail('CONFLICT', `Sheet "${t.name}" already has a column named "${col.name}".`);
+            if (!targets.includes(t)) targets.push(t);
+          });
+          const options = apiSheetOptions(s, col);
+          return {
+            summary: `Copy column "${col.name}" from "${s.name}" to ${targets.length === 1 ? '"' + targets[0].name + '"' : targets.length + ' sheets'}`,
+            details: [`Type: ${typeLabels[col.type]}${col.prefix ? ' (prefix ' + col.prefix + ')' : ''}${options ? '; values: ' + clip(options.join(', '), 200) : ''}`,
+              `To: ${targets.map(t => t.name).join(', ')}`, 'Only the definition is copied; the new columns start empty.'],
+            apply: () => {
+              targets.forEach(t => {
+                if (!sheets.includes(t)) fail('CHANGED', `Sheet "${t.name}" was deleted.`);
+                if (hasName(t)) fail('CHANGED', `Sheet "${t.name}" now has a column named "${col.name}".`);
+              });
+              const made = copyColumnDefinition(col, options, targets);
+              persist();
+              return { copied: made.map((c, i) => ({ sheet: targets[i].name, ...apiColumnInfo(targets[i], c) })) };
+            }
+          };
+        }
+      },
+      {
         name: 'addRows',
         description: `Add rows (entries) to a sheet, at most ${AGENT_MAX_ROWS} per call. Each item is an object of values keyed by column id or name. Columns left out get their default (ID columns get the next number). Returns the new row ids.`,
         inputSchema: obj({ sheet: S_SHEET, rows: { type: 'array', items: S_VALUES, minItems: 1, maxItems: AGENT_MAX_ROWS } }, ['rows']),
@@ -4859,6 +4978,7 @@ createApp({
       toggleRowSelect, toggleSelectAll, clearSelection,
       bulkOpen, bulk, bulkCols, bulkIdKeep, bulkColumnCount, openBulk, closeBulk, applyBulk,
       changeTypePrefix, changeTypeIsNoop, changeTypeInvalid,
+      copyColumn, copyColumnSelected, copyColumnTargets, cancelCopyColumn, confirmCopyColumn,
       changeTypeCol, changeTypeValue, changeTypeLossCount, openChangeType, cancelChangeType, confirmChangeType,
       renamingColId, renameDraft, renameInputs, startRename, cancelRename, commitRename,
       columnVisOpen, visibleColumns, hiddenColumnCount, setColumnHidden, showAllColumns,
