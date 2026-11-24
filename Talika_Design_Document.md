@@ -86,7 +86,7 @@ Importing a file builds the schema from its own header row; there is no template
 5. **Set** — few distinct values relative to the row count (at most `min(8, ⌈rows ÷ 2⌉)`, with at least 3 populated rows).
 6. **Text** — the fallback.
 
-Every sheet in the file is imported as its own tab. Importing into an empty document applies immediately. Importing on top of existing data asks the user to **Replace All** (discard everything and use the file's sheets), **Add as New Sheets** (append each imported sheet as a new tab), or **Merge** (match imported sheets to existing ones by name, then columns by name, adding any new columns and backfilling blanks on existing rows; sheets with new names become new tabs).
+Every sheet in the file is imported as its own tab. Importing into an empty document applies immediately. Importing on top of existing data asks the user to **Replace All** (discard everything and use the file's sheets), **Add as New Sheets** (append each imported sheet as a new tab), or **Merge** (match imported sheets to existing ones by name, then columns by name, adding any new columns and backfilling blanks on existing rows; sheets with new names become new tabs). An imported Index sheet (Name and Description columns, with at least one row that names a sheet) is loaded into the document's Index with all its columns, without the rows that match no sheet; any other sheet called "Index" is imported as `im_Index`.
 
 ## Excel export
 

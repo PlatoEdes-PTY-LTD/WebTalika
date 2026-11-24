@@ -1796,20 +1796,35 @@ function ensureIndexSheet(list) {
   list.unshift(index);
   return list;
 }
-/* an imported worksheet that is a WebTalika Index (exported earlier):
-   returns its descriptions as Map(lower-case sheet name -> description) */
-function readIndexDescriptions(imp) {
+/* reads an imported worksheet as this document's Index: it must be called
+   "Index", have Name and Description columns, and at least one row must
+   name a sheet from `sheetNames` (or it has no rows). Rows that match no
+   sheet, or repeat one, are dropped. Returns { columns, rows } with all its
+   columns (Name and Description as the locked Index columns), or null when
+   it is an ordinary sheet. */
+function readImportedIndex(imp, sheetNames) {
   if (!sameSheetName(imp.name, INDEX_SHEET_NAME)) return null;
   const nameCol = imp.columns.find(c => sameSheetName(c.name, 'Name'));
   const descCol = imp.columns.find(c => sameSheetName(c.name, 'Description'));
   if (!nameCol || !descCol) return null;
-  const map = new Map();
-  imp.rows.forEach(r => {
-    const n = String(r.values[nameCol.id] == null ? '' : r.values[nameCol.id]).trim();
-    const d = r.values[descCol.id];
-    if (n) map.set(n.toLowerCase(), d == null ? '' : String(d));
-  });
-  return map;
+  const known = new Set(sheetNames.map(n => cleanSheetName(n).toLowerCase()));
+  const seen = new Set();
+  const [nameDef, descDef] = indexColumns();
+  const columns = imp.columns.map(c => (c === nameCol ? nameDef : c === descCol ? descDef : c));
+  const rows = [];
+  for (const r of imp.rows) {
+    const name = cleanSheetName(valueToText(nameCol.type, r.values[nameCol.id]));
+    const key = name.toLowerCase();
+    // the Index does not list itself
+    if (!name || !known.has(key) || seen.has(key) || sameSheetName(name, INDEX_SHEET_NAME)) continue;
+    seen.add(key);
+    const values = { ...r.values, [INDEX_NAME_COL]: name, [INDEX_DESC_COL]: valueToText(descCol.type, r.values[descCol.id]) };
+    if (nameCol.id !== INDEX_NAME_COL) delete values[nameCol.id];
+    if (descCol.id !== INDEX_DESC_COL) delete values[descCol.id];
+    rows.push({ values });
+  }
+  if (imp.rows.length && !rows.length) return null;
+  return { columns, rows };
 }
 /* Excel sheet names: at most 31 characters, none of : \ / ? * [ ], no leading or trailing apostrophe */
 function cleanSheetName(name) {
@@ -2101,14 +2116,38 @@ createApp({
       const index = indexSheet.value;
       return index ? sheetContent(index).rows.find(r => sameSheetName(r.values[INDEX_NAME_COL], name)) : null;
     }
-    /* fills Index descriptions from an imported Index (see readIndexDescriptions);
-       `rename` maps an imported sheet name (lower case) to the name it got here */
-    function applyIndexDescriptions(map, { onlyEmpty = false, rename = null } = {}) {
-      if (!map) return;
-      map.forEach((desc, lowerName) => {
-        const row = indexRowFor(rename && rename.has(lowerName) ? rename.get(lowerName) : lowerName);
-        if (!row || (onlyEmpty && row.values[INDEX_DESC_COL])) return;
-        row.values[INDEX_DESC_COL] = desc;
+    /* fills the Index from an imported one (see readImportedIndex): columns are
+       matched by name and missing ones are added. `onlyEmpty` keeps cells that
+       have a value; `rename` maps an imported sheet name (lower case) to the
+       name it got here, and limits the update to those sheets */
+    function applyImportedIndex(imp, { onlyEmpty = false, rename = null } = {}) {
+      const index = indexSheet.value;
+      if (!imp || !index) return;
+      const c = sheetContent(index);
+      const used = new Set();
+      const pairs = imp.columns.filter(ic => !ic.indexName).map(ic => {
+        let col = ic.locked
+          ? c.columns.find(x => x.id === ic.id)
+          : c.columns.find(x => !x.locked && !used.has(x.id) && sameSheetName(x.name, ic.name));
+        if (!col) {
+          let id = ic.id, n = 1;
+          while (c.columns.some(x => x.id === id)) id = ic.id + '_' + (n++);
+          c.columns.push({ ...ic, id });
+          c.rows.forEach(r => { r.values[id] = emptyValueFor(ic.type); });
+          col = c.columns[c.columns.length - 1];
+        }
+        used.add(col.id);
+        return { ic, col };
+      });
+      imp.rows.forEach(ir => {
+        const lowerName = ir.values[INDEX_NAME_COL].toLowerCase();
+        if (rename && !rename.has(lowerName)) return;
+        const row = indexRowFor(rename ? rename.get(lowerName) : lowerName);
+        if (!row) return;
+        pairs.forEach(({ ic, col }) => {
+          if (onlyEmpty && !isEmptyValue(col.type, row.values[col.id])) return;
+          row.values[col.id] = convertValue(ic.type, col.type, ir.values[ic.id], { prefix: col.prefix });
+        });
       });
     }
     function openSheetByName(name) {
@@ -3525,7 +3564,7 @@ createApp({
 
     /* ---- import ---- */
     const importChoiceOpen = ref(false);
-    const pendingImport = ref(null); // { fileName, sheets: [{ name, columns, rows }] }
+    const pendingImport = ref(null); // { fileName, sheets: [{ name, columns, rows }], sheetNames (every sheet in the file, empty ones too) }
 
     /* one worksheet -> { columns, rows }, or null when it has no header row */
     function parseWorksheet(ws) {
@@ -3600,7 +3639,7 @@ createApp({
           });
           if (!impSheets.length) { showToast('No data found in that file'); return; }
 
-          pendingImport.value = { fileName: file.name, sheets: impSheets };
+          pendingImport.value = { fileName: file.name, sheets: impSheets, sheetNames: wb.SheetNames.slice() };
           if (!isBlankWorkbook.value) {
             importChoiceOpen.value = true;
           } else {
@@ -3636,19 +3675,31 @@ createApp({
     const pendingImportRowCount = computed(() => pendingImport.value ? pendingImport.value.sheets.reduce((n, s) => n + s.rows.length, 0) : 0);
     function applyImport(mode) {
       if (!pendingImport.value) return;
-      const { fileName, sheets: impSheets } = pendingImport.value;
+      const { fileName, sheets: impSheets, sheetNames } = pendingImport.value;
       const n = pendingImportRowCount.value;
       const rowsLabel = `${n} row${n === 1 ? '' : 's'}`;
-      // an Index exported earlier is not added as a sheet; its descriptions fill this document's Index
-      let descriptions = null;
-      const dataSheets = impSheets.filter(s => {
-        const d = readIndexDescriptions(s);
-        if (d) descriptions = d;
-        return !d;
+      // an imported Index is not added as a sheet: it fills this document's Index. A sheet that is
+      // only called "Index" is imported like any other, as "im_Index" (the name Index is taken).
+      // A merge also accepts an Index that lists the sheets already in this document
+      const indexable = mode === 'merge' ? [...sheetNames, ...sheets.map(s => s.name)] : sheetNames;
+      let importedIndex = null;
+      const dataSheets = [];
+      impSheets.forEach(s => {
+        if (!sameSheetName(s.name, INDEX_SHEET_NAME)) { dataSheets.push(s); return; }
+        importedIndex = readImportedIndex(s, indexable);
+        if (importedIndex) return;
+        const name = uniqueName('im_' + s.name, n => impSheets.some(x => sameSheetName(x.name, n)));
+        dataSheets.push({ ...s, name });
       });
       if (mode === 'replace') {
-        loadSheets(dataSheets.map(s => makeSheet(s.name, s.columns, s.rows)), 0);
-        applyIndexDescriptions(descriptions);
+        const list = dataSheets.map(s => makeSheet(s.name, s.columns, s.rows));
+        if (!list.length) list.push(makeSheet('Sheet1', [], []));
+        if (importedIndex) {
+          const index = makeSheet(INDEX_SHEET_NAME, importedIndex.columns, importedIndex.rows);
+          index.isIndex = true;
+          list.push(index); // loadSheets moves it first
+        }
+        loadSheets(list, 0);
         showToast(`Replaced existing data with ${rowsLabel} from ${fileName}`);
       } else if (mode === 'new') {
         stashActiveSheet();
@@ -3661,7 +3712,7 @@ createApp({
         });
         activateSheet(sheets[first] || sheets[sheets.length - 1]);
         syncIndex();
-        applyIndexDescriptions(descriptions, { rename });
+        applyImportedIndex(importedIndex, { rename });
         showToast(`Added ${dataSheets.length} sheet${dataSheets.length === 1 ? '' : 's'} with ${rowsLabel} from ${fileName}`);
       } else {
         dataSheets.forEach(is => {
@@ -3671,7 +3722,7 @@ createApp({
           mergeRowsInto(c.columns, c.rows, is.columns, is.rows);
         });
         syncIndex();
-        applyIndexDescriptions(descriptions, { onlyEmpty: true });
+        applyImportedIndex(importedIndex, { onlyEmpty: true });
         showToast(`Added ${rowsLabel} from ${fileName}`);
       }
       currentFileName.value = fileName;

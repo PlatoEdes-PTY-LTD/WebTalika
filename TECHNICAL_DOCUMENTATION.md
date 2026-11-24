@@ -249,7 +249,10 @@ The labels in the UI come from the `typeLabels` object: Text, Date, Date & Time,
    - **Replace All** deletes all sheets and loads the imported ones.
    - **Add as New Sheets** appends each imported sheet as a new tab. Names that clash get a ` (2)` suffix.
    - **Merge** matches each imported sheet to an existing sheet by name, then columns by name (`mergeRowsInto`). Both matches ignore case. The app adds new columns and backfills empty values. An imported sheet with no match becomes a new tab.
-6. After the import, `currentFileName` holds the file name.
+6. A sheet called "Index" (any case) is checked with `readImportedIndex(imp, sheetNames)`.
+   - It is an Index when it has Name and Description columns and at least one row names a sheet of the file (Merge also accepts sheets already in the document), or it has no rows. Rows that match no sheet, or repeat one, are dropped. It is not added as a tab: all its columns go into the document's Index. Replace All uses its columns in their order. The other modes call `applyImportedIndex`, which matches columns by name and adds missing ones; Merge fills only empty cells.
+   - Otherwise it is imported as an ordinary sheet named `im_` plus its name, for example `im_Index`.
+7. After the import, `currentFileName` holds the file name.
 
 **List values.** `parseListEntries(raw)` splits the text on `;`. It trims each part and removes empty parts. A part that looks like a URL becomes `{ label: part, url: normalizedUrl }`. Other parts become `{ label: part, url: '' }`.
 
@@ -782,6 +785,7 @@ No automated test suite exists. Each session writes short Playwright scripts. Ch
 | 50 | Agent view tools: `getView`, `setSearch`, `setFilter`, `setSort`, `clearFilters` (no permission: they change only what is shown). `queryRows { onScreen: true }` reads the rows on screen. `describe()` gives each tool a `kind` (read, view, change). |
 | 51 | Column menu: **Copy to other sheets…** copies a column's definition (no values) to the ticked sheets. Sheets with a column of the same name are skipped. Not offered for global-linked Set columns. A copied Set column keeps its values list in `options`. Agent tool `copyColumnToSheets` (also a WebMCP tool) does the same. |
 | 52 | Global columns: a **+** button in the Global Columns dialog adds a global column to several sheets at once (`insertGlobalIntoSheets`; agent tool `addGlobalColumnToSheets`). `autoLinkGlobalColumns()`, run from `persist()` and after load, links any Set column whose name matches a global column. Renaming a linked column unlinks it (`renameColumnTo`). |
+| 53 | Import: an Index sheet is loaded with all its columns, not only Name and Description. A sheet called "Index" that is not an Index is imported as `im_Index`. |
 
 ---
 
