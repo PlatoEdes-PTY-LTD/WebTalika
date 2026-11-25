@@ -391,7 +391,7 @@ All dialogs use `.overlay` with `.modal`. A mouse-down on the overlay closes the
 - The Show / Hide Columns dialog lists every column with a checkbox, the name, and the type badge. A hidden column gets the class `is-hidden` (red tint, struck-through name).
 - A change applies at once. `setColumnHidden(col, hidden)` sets or deletes `col.hidden` and calls `persistColumns()`.
 - When a column is hidden, the app clears its filter, removes the tab filter conditions on it (`removeTabFiltersOn`), closes its filter popover, and clears the sort if it was the sort column. A filter or sort on a hidden column would change the table without a visible cause.
-- **Show All** runs `showAllColumns()`. The footer shows "N of M hidden" or "All columns shown".
+- The **Show All** and **Hide All** buttons sit above the checkbox list (`.col-vis-actions`). **Show All** runs `showAllColumns()`. **Hide All** runs `hideAllColumns()`, which unticks every column with the same clean-up as hiding one column. The footer shows "N of M hidden" or "All columns shown".
 - Hidden columns stay in search (`cellSearchText`), the bulk edit dialog, and the Excel export. The entry dialog shows them only when **Show hidden columns** is ticked (see 9.3).
 - An import with Replace gives new columns, so all are shown. An import with Merge keeps the `hidden` flag of existing columns.
 

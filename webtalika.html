@@ -120,6 +120,7 @@
   .format-preview{margin-left:auto;padding:2px 8px;border-radius:6px;background:var(--line-soft);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;}
   .col-vis-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--radius);cursor:pointer;font-size:13px;}
   .col-vis-item:hover{border-color:#b7c2c8;}
+  .col-vis-actions{display:flex;gap:8px;margin-bottom:10px;}
   .col-vis-item.is-hidden{background:var(--danger-tint);border-color:#efc4c4;color:var(--ink-soft);}
   .col-vis-item .col-vis-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
   .col-vis-move{display:flex;gap:2px;}
@@ -932,6 +933,10 @@
       </div>
       <div class="modal-body">
         <p class="hint" style="margin:0 0 12px;">Untick a column to hide it from the table. Hidden columns keep their data and are still exported and editable. The arrows change the column order (up is left).</p>
+        <div class="col-vis-actions">
+          <button type="button" class="btn btn-small" :disabled="!hiddenColumnCount" @click="showAllColumns">Show All</button>
+          <button type="button" class="btn btn-small" :disabled="!visibleColumns.length" @click="hideAllColumns">Hide All</button>
+        </div>
         <div class="col-vis-list">
           <label class="col-vis-item" v-for="(col, ci) in columns" :key="col.id" :class="{ 'is-hidden': col.hidden }">
             <input type="checkbox" :checked="!col.hidden" @change="setColumnHidden(col, !$event.target.checked)">
@@ -946,7 +951,6 @@
       </div>
       <div class="modal-foot">
         <span class="hint" style="margin:0 auto 0 0;">{{ hiddenColumnCount ? `${hiddenColumnCount} of ${columns.length} hidden` : 'All columns shown' }}</span>
-        <button class="btn" :disabled="!hiddenColumnCount" @click="showAllColumns">Show All</button>
         <button class="btn btn-primary" @click="columnVisOpen = false">Done</button>
       </div>
     </div>
@@ -3155,7 +3159,7 @@ createApp({
     }
 
     /* ---- show / hide columns ---- */
-    function setColumnHidden(col, hidden) {
+    function applyColumnHidden(col, hidden) {
       if (hidden) {
         col.hidden = true;
         // a filter or sort on a column you can't see would silently change the table
@@ -3166,6 +3170,9 @@ createApp({
       } else {
         delete col.hidden;
       }
+    }
+    function setColumnHidden(col, hidden) {
+      applyColumnHidden(col, hidden);
       persist();
     }
     function moveColumn(col, dir) {
@@ -3176,7 +3183,11 @@ createApp({
       persist();
     }
     function showAllColumns() {
-      columns.forEach(c => { delete c.hidden; });
+      columns.forEach(c => applyColumnHidden(c, false));
+      persist();
+    }
+    function hideAllColumns() {
+      columns.forEach(c => applyColumnHidden(c, true));
       persist();
     }
 
@@ -5177,7 +5188,7 @@ createApp({
       copyColumn, copyColumnSelected, copyColumnTargets, cancelCopyColumn, confirmCopyColumn,
       changeTypeCol, changeTypeValue, changeTypeLossCount, openChangeType, cancelChangeType, confirmChangeType,
       renamingColId, renameDraft, renameInputs, startRename, cancelRename, commitRename,
-      columnVisOpen, visibleColumns, hiddenColumnCount, setColumnHidden, showAllColumns,
+      columnVisOpen, visibleColumns, hiddenColumnCount, setColumnHidden, showAllColumns, hideAllColumns,
       dragColId, dragOverColId, onColDragStart, onColDragOver, onColDrop, onColDragEnd,
       sortColId, sortDir, toggleSort, sortTitle,
       columnFilters, openFilterColId, filterPopoverStyle, hasActiveFilter, toggleFilterPopover, clearFilter,
