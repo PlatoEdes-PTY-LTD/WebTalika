@@ -608,6 +608,8 @@
       <template v-else-if="openFilterCol.type !== 'date' && openFilterCol.type !== 'datetime'">
         <label>Contains</label>
         <input type="text" v-model="columnFilters[openFilterCol.id].text" placeholder="Any text" @keydown.enter="openFilterColId = null">
+        <label>Does not contain</label>
+        <input type="text" v-model="columnFilters[openFilterCol.id].notText" placeholder="No text excluded" @keydown.enter="openFilterColId = null">
       </template>
       <template v-else>
         <label>From</label>
@@ -2441,7 +2443,8 @@ createApp({
 
     /* ---- column filtering ----
        numerical: { min, max }   date, datetime: { from, to }
-       select: { values: [] } ('' stands for Unset)   other types: { text } (contains) */
+       select: { values: [] } ('' stands for Unset)
+       other types: { text, notText } (contains text, does not contain notText) */
     const columnFilters = reactive({});
     const openFilterColId = ref(null);
     const filterPopoverStyle = ref({});
@@ -2449,7 +2452,7 @@ createApp({
       if (col.type === 'numerical') return { min: '', max: '' };
       if (col.type === 'date' || col.type === 'datetime') return { from: '', to: '' };
       if (col.type === 'select') return { values: [] };
-      return { text: '' };
+      return { text: '', notText: '' };
     }
     function ensureFilter(col) {
       if (!columnFilters[col.id]) columnFilters[col.id] = emptyFilterFor(col);
@@ -2460,6 +2463,7 @@ createApp({
       if (!f) return false;
       if (f.values && f.values.length) return true;
       if (typeof f.text === 'string' && f.text.trim()) return true;
+      if (typeof f.notText === 'string' && f.notText.trim()) return true;
       return [f.min, f.max, f.from, f.to].some(v => v !== undefined && v !== null && v !== '');
     }
     const openFilterCol = computed(() => columns.find(c => c.id === openFilterColId.value) || null);
@@ -2819,7 +2823,10 @@ createApp({
           return !f.values || !f.values.length || f.values.includes(val || '');
         }
         const q = typeof f.text === 'string' ? f.text.trim().toLowerCase() : '';
-        return !q || cellText(col, row).toLowerCase().includes(q);
+        const nq = typeof f.notText === 'string' ? f.notText.trim().toLowerCase() : '';
+        if (!q && !nq) return true;
+        const cell = cellText(col, row).toLowerCase();
+        return (!q || cell.includes(q)) && (!nq || !cell.includes(nq));
       });
     }
 
@@ -4423,7 +4430,7 @@ createApp({
         if (c.type === 'select') out.values = f.values.slice();
         else if (c.type === 'numerical') { if (f.min !== '' && f.min !== null && f.min !== undefined) out.min = Number(f.min); if (f.max !== '' && f.max !== null && f.max !== undefined) out.max = Number(f.max); }
         else if (c.type === 'date' || c.type === 'datetime') { if (f.from) out.from = f.from; if (f.to) out.to = f.to; }
-        else out.text = f.text;
+        else { if (typeof f.text === 'string' && f.text.trim()) out.text = f.text; if (typeof f.notText === 'string' && f.notText.trim()) out.notText = f.notText; }
         return out;
       });
       const sortCol = columns.find(c => c.id === sortColId.value);
@@ -4443,13 +4450,13 @@ createApp({
       const f = emptyFilterFor(col);
       const wrong = keys => fail('INVALID_ARGUMENT', `A ${typeLabels[col.type]} column is filtered with ${keys}.`);
       if (col.type === 'select') {
-        if (has('min') || has('max') || has('from') || has('to') || has('text')) wrong('"values"');
+        if (has('min') || has('max') || has('from') || has('to') || has('text') || has('notText')) wrong('"values"');
         if (a.values !== undefined && a.values !== null) {
           if (!Array.isArray(a.values)) fail('INVALID_ARGUMENT', '"values" must be an array of strings ("" means Unset).');
           f.values = Array.from(new Set(a.values.map(v => String(v == null ? '' : v).trim())));
         }
       } else if (col.type === 'numerical') {
-        if (has('values') || has('from') || has('to') || has('text')) wrong('"min" and/or "max"');
+        if (has('values') || has('from') || has('to') || has('text') || has('notText')) wrong('"min" and/or "max"');
         ['min', 'max'].forEach(k => {
           if (!has(k)) return;
           const n = Number(a[k]);
@@ -4458,7 +4465,7 @@ createApp({
         });
         if (has('min') && has('max') && f.min > f.max) fail('INVALID_ARGUMENT', '"min" is greater than "max".');
       } else if (col.type === 'date' || col.type === 'datetime') {
-        if (has('values') || has('min') || has('max') || has('text')) wrong('"from" and/or "to"');
+        if (has('values') || has('min') || has('max') || has('text') || has('notText')) wrong('"from" and/or "to"');
         ['from', 'to'].forEach(k => {
           if (!has(k)) return;
           const t = String(a[k]).trim();
@@ -4470,8 +4477,9 @@ createApp({
         });
         if (f.from && f.to && Date.parse(f.from) > Date.parse(f.to)) fail('INVALID_ARGUMENT', '"from" is after "to".');
       } else {
-        if (has('values') || has('min') || has('max') || has('from') || has('to')) wrong('"text" (contains)');
+        if (has('values') || has('min') || has('max') || has('from') || has('to')) wrong('"text" (contains) and/or "notText" (does not contain)');
         if (has('text')) f.text = String(a.text);
+        if (has('notText')) f.notText = String(a.notText);
       }
       return f;
     }
@@ -4645,14 +4653,15 @@ createApp({
       },
       {
         name: 'setFilter', view: true,
-        description: 'Filter a sheet (shown first) by one column, like the column\'s Filter… menu. Set columns: "values" (rows with any of them; "" means Unset). Number columns: "min" and/or "max". Date and Date & Time columns: "from" and/or "to" (inclusive). Other columns: "text" (contains). Give none of these to clear the column\'s filter. Filters on several columns all apply. Changes only the view, so it needs no permission.',
+        description: 'Filter a sheet (shown first) by one column, like the column\'s Filter… menu. Set columns: "values" (rows with any of them; "" means Unset). Number columns: "min" and/or "max". Date and Date & Time columns: "from" and/or "to" (inclusive). Other columns: "text" (contains) and/or "notText" (does not contain). Give none of these to clear the column\'s filter. Filters on several columns all apply. Changes only the view, so it needs no permission.',
         inputSchema: obj({
           sheet: S_SHEET, column: S_COLUMN,
           values: { type: 'array', items: { type: 'string' } },
           min: { type: ['number', 'null'] }, max: { type: ['number', 'null'] },
           from: { type: ['string', 'null'], description: '"YYYY-MM-DD", or "YYYY-MM-DDTHH:mm" for Date & Time.' },
           to: { type: ['string', 'null'], description: '"YYYY-MM-DD", or "YYYY-MM-DDTHH:mm" for Date & Time.' },
-          text: { type: ['string', 'null'] }
+          text: { type: ['string', 'null'], description: 'Rows whose value contains this text.' },
+          notText: { type: ['string', 'null'], description: 'Rows whose value does not contain this text.' }
         }, ['column']),
         run: a => {
           const s = apiSheet(a.sheet), col = apiColumn(s, a.column);

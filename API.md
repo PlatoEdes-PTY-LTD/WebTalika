@@ -69,7 +69,7 @@ Every call returns a Promise of `{ ok: true, data }` or `{ ok: false, error: { c
 | `showSheet` | `sheet` | no (view) |
 | `getView` | none | no |
 | `setSearch` | `sheet?`, `text` (`""` clears) | no (view) |
-| `setFilter` | `sheet?`, `column`, and one of: `values` (Set), `min`/`max` (Number), `from`/`to` (Date, Date & Time), `text` (other types). With none of them, the column's filter is cleared. | no (view) |
+| `setFilter` | `sheet?`, `column`, and one of: `values` (Set), `min`/`max` (Number), `from`/`to` (Date, Date & Time), `text` and/or `notText` (other types). With none of them, the column's filter is cleared. | no (view) |
 | `setSort` | `sheet?`, `column?`, `direction?` (leave out `column` to remove the sort) | no (view) |
 | `clearFilters` | `sheet?`, `keepSearch?` | no (view) |
 | `createSheet` | `name`, `columns?: [{ name, type, prefix?, fromGlobal? }]` | yes |
@@ -134,7 +134,7 @@ The view tools change the table the user sees, in the same way as the search box
   - **Number:** `min` and/or `max`.
   - **Date:** `from` and/or `to`, as `YYYY-MM-DD`. Both ends are included.
   - **Date & Time:** `from` and/or `to`, as `YYYY-MM-DDTHH:mm`. A plain date covers the whole day.
-  - **Text, Link, List, ID:** `text`, which matches rows that contain it.
+  - **Text, Link, List, ID:** `text` matches rows that contain it, and `notText` matches rows that don't. Use one or both. Matching ignores case.
 - **Hidden columns:** they can't be filtered or sorted (`HIDDEN_COLUMN`).
 - **Current state:** `getView` returns the search, the filters, the sort, and the number of rows shown.
 - **Reading the shown rows:** `queryRows { onScreen: true }` starts from those rows, in their order on screen.

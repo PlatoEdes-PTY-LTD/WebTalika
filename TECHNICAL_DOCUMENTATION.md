@@ -323,7 +323,7 @@ The table sits in `.table-wrap`. The `.table-wrap` is the scroll container. It s
 **Behavior:**
 
 - **Sort** uses `sortValue` and `compareRows`. Empty values go last.
-- **Filter** values (`emptyFilterFor`): Number uses `{ min, max }`. Date and Date & Time use `{ from, to }`. Set uses `{ values: [] }`, where `''` means Unset; a row passes if its value is in the list. Text, Link, List, and ID use `{ text }`; a row passes if `cellText` contains the text (case-insensitive). `matchesFilters` applies all filters; a row must pass every one.
+- **Filter** values (`emptyFilterFor`): Number uses `{ min, max }`. Date and Date & Time use `{ from, to }`. Set uses `{ values: [] }`, where `''` means Unset; a row passes if its value is in the list. Text, Link, List, and ID use `{ text, notText }`; a row passes if `cellText` contains `text` and does not contain `notText` (case-insensitive; an empty field is ignored, and a filter saved without `notText` still works). `matchesFilters` applies all filters; a row must pass every one.
 - A header with an active filter gets the class `is-filtered` (amber background, amber text, amber bottom line).
 - There is one filter popover. It is teleported to `body` from outside the table and reads `openFilterCol`. It must stay outside the table: the table unmounts when no row matches, and a popover inside it would close under the user's click.
 - When no row matches and filters are active, the empty state says how many are active and shows a **Clear Filters** button.
