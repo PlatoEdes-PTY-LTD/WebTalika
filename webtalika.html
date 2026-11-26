@@ -371,6 +371,7 @@
   .combo-empty{padding:8px 11px;font-size:12.5px;color:var(--ink-soft);}
 
   /* live sharing */
+  .btn-help{text-decoration:none;}
   .btn-agent{gap:6px;}
   .btn-agent .agent-label{font-size:12px;font-weight:600;}
   .btn-agent.is-auto{background:var(--amber);border-color:var(--amber);color:#fff;}
@@ -492,6 +493,9 @@
       <button class="btn" @click="openNewInstance" title="New Window: open an independent copy of WebTalika in a new tab. It does not share data with this one." aria-label="New Window">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
       </button>
+      <a class="btn btn-help" :href="helpUrl" target="_blank" rel="noopener" title="Help: an interactive tutorial on how to use WebTalika (opens in a new tab)" aria-label="Help">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 015.8 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </a>
     </div>
   </div>
 
@@ -5140,6 +5144,9 @@ createApp({
        Spec: document.modelContext.registerTool(tool, { signal }); the result
        of execute is serialized as JSON. Early Chrome previews used
        navigator.modelContext and expected { content: [{ type: 'text', text }] }. */
+    /* Help opens the tutorial next to this file; a downloaded copy opened from disk uses the hosted one */
+    const helpUrl = /^https?:$/.test(location.protocol) ? 'howto.html' : 'https://platoedes-pty-ltd.github.io/WebTalika/howto.html';
+
     let webMcpStatus = 'unavailable';
     const webMcpAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
     function registerWebMcp() {
@@ -5169,6 +5176,7 @@ createApp({
     registerWebMcp();
 
     return {
+      helpUrl,
       agent, agentAsk, answerAgent, setAgentAuto,
       collab, shareLink, collabTitle, openCollab, confirmCollabName, cancelCollabName, copyShareLink, stopCollab,
       tableWrap, hasMoreRight, updateMoreCols, scrollMoreCols,
