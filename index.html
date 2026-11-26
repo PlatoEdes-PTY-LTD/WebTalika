@@ -158,60 +158,8 @@
     }
     .window-dot { width: 7px; height: 7px; border-radius: 50%; background: #c7d0d1; }
     .window-dot:first-child { background: #d7a07c; }
+    .demo-gif { display: block; width: 100%; height: auto; }
     .window-label { margin-left: 9px; color: #5a686e; font-size: 9px; }
-    .mock-app { padding: 21px 22px 20px; }
-    .mock-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-    .mock-title { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 750; }
-    .mini-mark {
-      width: 23px;
-      height: 23px;
-      display: grid;
-      place-items: center;
-      border-radius: 6px;
-      background: var(--teal-tint);
-      color: var(--teal-dark);
-      font-size: 12px;
-      font-weight: 800;
-    }
-    .record-count { color: var(--teal-dark); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; }
-    .mock-subtitle { margin: 5px 0 15px 32px; color: #5a686e; font-size: 9px; }
-    .mock-toolbar { display: flex; align-items: center; gap: 7px; padding-bottom: 12px; }
-    .mock-search {
-      height: 25px;
-      min-width: 0;
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 0 8px;
-      border: 1px solid var(--line);
-      border-radius: 5px;
-      color: #5a686e;
-      font-size: 9px;
-    }
-    .mock-button { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; color: #53636b; font-size: 8px; white-space: nowrap; }
-    .mock-button.filled { border-color: var(--teal); background: var(--teal); color: #fff; }
-    .table-scroll { overflow: hidden; border: 1px solid var(--line); border-radius: 6px; }
-    .mock-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .mock-table th {
-      padding: 9px 10px;
-      background: #eef2f1;
-      color: #4f5d64;
-      text-align: left;
-      font-size: 8px;
-      font-weight: 750;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-    .mock-table td { overflow: hidden; padding: 10px; border-top: 1px solid #edf0f1; color: #263640; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-    .mock-table th:first-child, .mock-table td:first-child { width: 31%; }
-    .mock-table th:nth-child(2), .mock-table td:nth-child(2) { width: 27%; }
-    .mock-table th:nth-child(3), .mock-table td:nth-child(3) { width: 24%; }
-    .mock-table th:last-child, .mock-table td:last-child { width: 18%; }
-    .id { color: var(--teal-dark); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; font-weight: 700; }
-    .tag { display: inline-block; padding: 3px 7px; border-radius: 99px; background: var(--teal-tint); color: var(--teal-dark); font-size: 8px; font-weight: 700; }
-    .tag.amber { background: var(--amber-tint); color: #986016; }
-    .mock-foot { display: flex; justify-content: space-between; margin-top: 10px; color: #5a686e; font-size: 8px; }
     .float-note {
       position: absolute;
       right: -24px;
@@ -358,9 +306,6 @@
       .hero-copy > p { max-width: 430px; }
       .product-scene { width: 100%; }
       .app-window { transform: none; }
-      .mock-app { padding: 16px 13px; }
-      .mock-table th, .mock-table td { padding-inline: 7px; }
-      .mock-table th:last-child, .mock-table td:last-child { display: none; }
       .float-note { right: 8px; bottom: -38px; }
       .trust-row { gap: 16px 22px; padding: 19px 0; }
       .trust-item { font-size: 14px; }
@@ -406,7 +351,6 @@
       .nav .nav-cta { font-size: 14px; }
       .hero-actions { gap: 13px; }
       .button-primary { padding-inline: 13px; }
-      .mock-button { padding-inline: 6px; }
       .feature:nth-child(odd) { padding-right: 9px; }
       .feature:nth-child(even) { padding-left: 10px; }
     }
@@ -448,33 +392,11 @@
         </p>
       </div>
 
-      <div class="product-scene" aria-hidden="true">
-        <span class="scene-index">01 / A table, shaped around you</span>
+      <div class="product-scene">
+        <span class="scene-index" aria-hidden="true">01 / A table, shaped around you</span>
         <div class="app-window">
           <div class="window-bar" aria-hidden="true"><span class="window-dot"></span><span class="window-dot"></span><span class="window-dot"></span><span class="window-label">WebTalika · use-cases</span></div>
-          <div class="mock-app">
-            <div class="mock-head">
-              <div class="mock-title"><span class="mini-mark">D</span> Use cases</div>
-              <span class="record-count">3 ENTRIES</span>
-            </div>
-            <p class="mock-subtitle">A simple view of the work in motion.</p>
-            <div class="mock-toolbar" aria-hidden="true">
-              <div class="mock-search"><span>⌕</span> Search entries...</div>
-              <span class="mock-button">Import Excel</span>
-              <span class="mock-button filled">+ Add entry</span>
-            </div>
-            <div class="table-scroll">
-              <table class="mock-table" aria-label="Example table entries">
-                <thead><tr><th>Use case</th><th>Owner</th><th>Status</th><th>Priority</th></tr></thead>
-                <tbody>
-                  <tr><td><span class="id">UC-01</span> &nbsp;Client onboarding</td><td>Customer team</td><td><span class="tag">In progress</span></td><td><span class="tag amber">High</span></td></tr>
-                  <tr><td><span class="id">UC-02</span> &nbsp;Inventory review</td><td>Operations</td><td><span class="tag">Ready</span></td><td><span class="tag">Normal</span></td></tr>
-                  <tr><td><span class="id">UC-03</span> &nbsp;Renewal tracking</td><td>Customer team</td><td><span class="tag amber">Planning</span></td><td><span class="tag">Normal</span></td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="mock-foot"><span>Showing 3 of 3 entries</span><span>Saved in this browser</span></div>
-          </div>
+          <img class="demo-gif" src="media/webtalika-in-30-seconds.gif" width="1000" height="557" alt="WebTalika in 30 seconds: a short demo of the app">
         </div>
         <div class="float-note"><span class="float-note-mark" aria-hidden="true">↗</span><span><strong>Excel, when you need it</strong><small>Import and export in a few clicks</small></span></div>
       </div>
